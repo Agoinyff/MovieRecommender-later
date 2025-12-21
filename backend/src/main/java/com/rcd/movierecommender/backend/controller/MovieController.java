@@ -16,10 +16,21 @@ public class MovieController {
 
     private final MovieService movieService;
 
+    /**
+     * 构造函数注入服务层，便于测试与解耦。
+     */
     public MovieController(MovieService movieService) {
         this.movieService = movieService;
     }
 
+    /**
+     * 按关键字分页检索电影。
+     *
+     * @param query  模糊匹配的名称关键字，允许为空以返回全量列表。
+     * @param page   页码，从 0 开始。
+     * @param size   每页数量，默认 20。
+     * @return 分页的电影结果。
+     */
     @GetMapping
     public Page<MovieDto> search(
             @RequestParam(value = "query", required = false) String query,
@@ -28,6 +39,12 @@ public class MovieController {
         return movieService.searchMovies(query, page, size);
     }
 
+    /**
+     * 根据主键获取单个电影详情。
+     *
+     * @param id 电影主键。
+     * @return 找到时返回 200 + MovieDto，未找到时返回 404。
+     */
     @GetMapping("/{id}")
     public ResponseEntity<MovieDto> getMovie(@PathVariable Long id) {
         return movieService.getMovie(id)

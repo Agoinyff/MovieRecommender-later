@@ -47,6 +47,11 @@
             <artifactId>mahout-integration</artifactId>
             <version>0.13.0</version>
         </dependency>
+<!--        <dependency>-->
+<!--            <groupId>org.apache.mahout</groupId>-->
+<!--            <artifactId>mahout</artifactId>-->
+<!--            <version>0.13.0</version>-->
+<!--        </dependency>-->
     </dependencies>
 
     <build>

@@ -1,6 +1,5 @@
 package com.rcd.movierecommender.backend.service;
 
-import com.rcd.movierecommender.backend.dto.MovieDto;
 import com.rcd.movierecommender.backend.dto.RecommendationDto;
 import com.rcd.movierecommender.backend.dto.RecommendationStrategy;
 import com.rcd.movierecommender.backend.entity.MovieEntity;
@@ -14,7 +13,7 @@ import org.apache.mahout.cf.taste.impl.model.GenericUserPreferenceArray;
 import org.apache.mahout.cf.taste.impl.neighborhood.NearestNUserNeighborhood;
 import org.apache.mahout.cf.taste.impl.recommender.GenericItemBasedRecommender;
 import org.apache.mahout.cf.taste.impl.recommender.GenericUserBasedRecommender;
-import org.apache.mahout.cf.taste.impl.recommender.slopeone.SlopeOneRecommender;
+//import org.apache.mahout.cf.taste.impl.recommender.slopeone.SlopeOneRecommender;
 import org.apache.mahout.cf.taste.impl.similarity.LogLikelihoodSimilarity;
 import org.apache.mahout.cf.taste.impl.similarity.PearsonCorrelationSimilarity;
 import org.apache.mahout.cf.taste.model.DataModel;
@@ -110,7 +109,8 @@ public class RecommendationService {
                 ItemSimilarity itemSimilarity = new LogLikelihoodSimilarity(dataModel);
                 return new GenericItemBasedRecommender(dataModel, itemSimilarity);
             case SLOPE_ONE:
-                return new SlopeOneRecommender(dataModel);
+                //TODO 自研实现
+                return new CustomSlopeOneRecommender(dataModel);
             case USER_BASED:
             default:
                 UserSimilarity userSimilarity = new PearsonCorrelationSimilarity(dataModel);

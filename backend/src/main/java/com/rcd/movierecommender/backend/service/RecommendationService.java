@@ -7,6 +7,25 @@ import com.rcd.movierecommender.backend.entity.MovieEntity;
 import com.rcd.movierecommender.backend.entity.RatingEntity;
 import com.rcd.movierecommender.backend.repository.MovieRepository;
 import com.rcd.movierecommender.backend.repository.RatingRepository;
+import org.apache.mahout.cf.taste.common.TasteException;
+import org.apache.mahout.cf.taste.impl.model.GenericDataModel;
+import org.apache.mahout.cf.taste.impl.model.GenericPreference;
+import org.apache.mahout.cf.taste.impl.model.GenericUserPreferenceArray;
+import org.apache.mahout.cf.taste.impl.neighborhood.NearestNUserNeighborhood;
+import org.apache.mahout.cf.taste.impl.recommender.GenericItemBasedRecommender;
+import org.apache.mahout.cf.taste.impl.recommender.GenericUserBasedRecommender;
+import org.apache.mahout.cf.taste.impl.recommender.slopeone.SlopeOneRecommender;
+import org.apache.mahout.cf.taste.impl.similarity.LogLikelihoodSimilarity;
+import org.apache.mahout.cf.taste.impl.similarity.PearsonCorrelationSimilarity;
+import org.apache.mahout.cf.taste.model.DataModel;
+import org.apache.mahout.cf.taste.model.Preference;
+import org.apache.mahout.cf.taste.model.PreferenceArray;
+import org.apache.mahout.cf.taste.neighborhood.UserNeighborhood;
+import org.apache.mahout.cf.taste.recommender.Recommender;
+import org.apache.mahout.cf.taste.recommender.RecommendedItem;
+import org.apache.mahout.cf.taste.similarity.ItemSimilarity;
+import org.apache.mahout.cf.taste.similarity.UserSimilarity;
+import org.apache.mahout.cf.taste.impl.common.FastByIDMap;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,216 +64,61 @@ public class RecommendationService {
      * @return 推荐结果列表。
      */
     public List<RecommendationDto> recommend(Long userId, int size, RecommendationStrategy strategy) {
-        Map<Long, Map<Long, Double>> ratingsByUser = loadRatingsByUser();
-        Map<Long, Double> targetRatings = ratingsByUser.getOrDefault(userId, Collections.emptyMap());
-        if (targetRatings.isEmpty()) {
+        DataModel dataModel = buildDataModel();
+        if (!userExists(userId, dataModel)) {
             return Collections.emptyList();
         }
 
-        Map<Long, Double> scored;
+        try {
+            List<RecommendedItem> recommendedItems = buildRecommender(dataModel, strategy)
+                    .recommend(userId, size);
+            return recommendedItems.stream()
+                    .map(item -> toRecommendationDto(item.getItemID(), item.getValue()))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+        } catch (TasteException e) {
+            throw new IllegalStateException("Failed to generate recommendations with Mahout", e);
+        }
+    }
+
+    private DataModel buildDataModel() {
+        FastByIDMap<PreferenceArray> preferenceMap = new FastByIDMap<>();
+        Map<Long, List<Preference>> preferences = new HashMap<>();
+        for (RatingEntity rating : ratingRepository.findAll()) {
+            preferences
+                    .computeIfAbsent(rating.getUserId(), id -> new ArrayList<>())
+                    .add(new GenericPreference(rating.getUserId(), rating.getMovieId(), rating.getPreference().floatValue()));
+        }
+        for (Map.Entry<Long, List<Preference>> entry : preferences.entrySet()) {
+            preferenceMap.put(entry.getKey(), new GenericUserPreferenceArray(entry.getValue()));
+        }
+        return new GenericDataModel(preferenceMap);
+    }
+
+    private boolean userExists(Long userId, DataModel dataModel) {
+        try {
+            dataModel.getPreferencesFromUser(userId);
+            return true;
+        } catch (TasteException e) {
+            return false;
+        }
+    }
+
+    private Recommender buildRecommender(DataModel dataModel, RecommendationStrategy strategy) throws TasteException {
         switch (strategy) {
             case ITEM_BASED:
-                scored = recommendItemBased(userId, ratingsByUser);
-                break;
+                ItemSimilarity itemSimilarity = new LogLikelihoodSimilarity(dataModel);
+                return new GenericItemBasedRecommender(dataModel, itemSimilarity);
             case SLOPE_ONE:
-                scored = recommendSlopeOne(userId, ratingsByUser);
-                break;
+                return new SlopeOneRecommender(dataModel);
             case USER_BASED:
             default:
-                scored = recommendUserBased(userId, ratingsByUser);
-                break;
+                UserSimilarity userSimilarity = new PearsonCorrelationSimilarity(dataModel);
+                UserNeighborhood neighborhood = new NearestNUserNeighborhood(10, userSimilarity, dataModel);
+                return new GenericUserBasedRecommender(dataModel, neighborhood, userSimilarity);
         }
-
-        return scored.entrySet().stream()
-                .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
-                .limit(size)
-                .map(entry -> toRecommendationDto(entry.getKey(), entry.getValue()))
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
     }
 
-    /**
-     * 从数据库加载所有评分，转换为 {userId -> {movieId -> rating}} 的嵌套 Map。
-     */
-    private Map<Long, Map<Long, Double>> loadRatingsByUser() {
-        Map<Long, Map<Long, Double>> ratingsByUser = new HashMap<>();
-        List<RatingEntity> allRatings = ratingRepository.findAll();
-        for (RatingEntity rating : allRatings) {
-            ratingsByUser
-                    .computeIfAbsent(rating.getUserId(), id -> new HashMap<>())
-                    .put(rating.getMovieId(), rating.getPreference().doubleValue());
-        }
-        return ratingsByUser;
-    }
-
-    /**
-     * 用户协同过滤：计算目标用户与其他用户的余弦相似度，根据相似用户的评分为未看电影加权评分。
-     */
-    private Map<Long, Double> recommendUserBased(Long userId, Map<Long, Map<Long, Double>> ratingsByUser) {
-        Map<Long, Double> targetRatings = ratingsByUser.getOrDefault(userId, Collections.emptyMap());
-        Map<Long, Double> scores = new HashMap<>();
-        Map<Long, Double> similarityTotals = new HashMap<>();
-
-        for (Map.Entry<Long, Map<Long, Double>> entry : ratingsByUser.entrySet()) {
-            Long otherUserId = entry.getKey();
-            if (otherUserId.equals(userId)) {
-                continue;
-            }
-            double similarity = cosineSimilarity(targetRatings, entry.getValue());
-            if (similarity <= 0) {
-                continue;
-            }
-            for (Map.Entry<Long, Double> movieRating : entry.getValue().entrySet()) {
-                Long movieId = movieRating.getKey();
-                if (targetRatings.containsKey(movieId)) {
-                    continue;
-                }
-                scores.merge(movieId, movieRating.getValue() * similarity, Double::sum);
-                similarityTotals.merge(movieId, similarity, Double::sum);
-            }
-        }
-
-        Map<Long, Double> results = new HashMap<>();
-        for (Map.Entry<Long, Double> entry : scores.entrySet()) {
-            double totalSim = similarityTotals.getOrDefault(entry.getKey(), 1.0);
-            results.put(entry.getKey(), entry.getValue() / totalSim);
-        }
-        return results;
-    }
-
-    /**
-     * 物品协同过滤：先按电影重组评分矩阵，再用余弦相似度衡量电影间相似度，为目标用户未看过的电影计算加权得分。
-     */
-    private Map<Long, Double> recommendItemBased(Long userId, Map<Long, Map<Long, Double>> ratingsByUser) {
-        Map<Long, Double> targetRatings = ratingsByUser.getOrDefault(userId, Collections.emptyMap());
-        Map<Long, Map<Long, Double>> ratingsByMovie = new HashMap<>();
-        for (Map.Entry<Long, Map<Long, Double>> userEntry : ratingsByUser.entrySet()) {
-            for (Map.Entry<Long, Double> rating : userEntry.getValue().entrySet()) {
-                ratingsByMovie
-                        .computeIfAbsent(rating.getKey(), id -> new HashMap<>())
-                        .put(userEntry.getKey(), rating.getValue());
-            }
-        }
-
-        Map<Long, Double> scores = new HashMap<>();
-        Map<Long, Double> weight = new HashMap<>();
-
-        for (Map.Entry<Long, Double> targetRating : targetRatings.entrySet()) {
-            Long targetMovie = targetRating.getKey();
-            Map<Long, Double> targetMovieRatings = ratingsByMovie.getOrDefault(targetMovie, Collections.emptyMap());
-            for (Map.Entry<Long, Map<Long, Double>> candidateEntry : ratingsByMovie.entrySet()) {
-                Long candidateMovie = candidateEntry.getKey();
-                if (candidateMovie.equals(targetMovie) || targetRatings.containsKey(candidateMovie)) {
-                    continue;
-                }
-                double similarity = cosineSimilarity(targetMovieRatings, candidateEntry.getValue());
-                if (similarity <= 0) {
-                    continue;
-                }
-                scores.merge(candidateMovie, similarity * targetRating.getValue(), Double::sum);
-                weight.merge(candidateMovie, similarity, Double::sum);
-            }
-        }
-
-        Map<Long, Double> results = new HashMap<>();
-        for (Map.Entry<Long, Double> entry : scores.entrySet()) {
-            double sim = weight.getOrDefault(entry.getKey(), 1.0);
-            results.put(entry.getKey(), entry.getValue() / sim);
-        }
-        return results;
-    }
-
-    /**
-     * Slope One：利用评分差矩阵（diff）和频次矩阵（freq）对未看电影进行差值预测。
-     */
-    private Map<Long, Double> recommendSlopeOne(Long userId, Map<Long, Map<Long, Double>> ratingsByUser) {
-        Map<Long, Double> targetRatings = ratingsByUser.getOrDefault(userId, Collections.emptyMap());
-        Set<Long> targetMovies = targetRatings.keySet();
-
-        Map<Long, Map<Long, Double>> diff = new HashMap<>();
-        Map<Long, Map<Long, Integer>> freq = new HashMap<>();
-
-        for (Map<Long, Double> userRatings : ratingsByUser.values()) {
-            for (Map.Entry<Long, Double> entryA : userRatings.entrySet()) {
-                Long itemA = entryA.getKey();
-                if (!targetMovies.contains(itemA)) {
-                    continue;
-                }
-                for (Map.Entry<Long, Double> entryB : userRatings.entrySet()) {
-                    Long itemB = entryB.getKey();
-                    if (itemA.equals(itemB)) {
-                        continue;
-                    }
-                    double difference = entryA.getValue() - entryB.getValue();
-                    diff.computeIfAbsent(itemA, key -> new HashMap<>())
-                            .merge(itemB, difference, Double::sum);
-                    freq.computeIfAbsent(itemA, key -> new HashMap<>())
-                            .merge(itemB, 1, Integer::sum);
-                }
-            }
-        }
-
-        Map<Long, Double> predictions = new HashMap<>();
-        Map<Long, Integer> frequencies = new HashMap<>();
-
-        for (Map.Entry<Long, Double> targetEntry : targetRatings.entrySet()) {
-            Long targetMovie = targetEntry.getKey();
-            double targetRating = targetEntry.getValue();
-            Map<Long, Double> movieDiffs = diff.getOrDefault(targetMovie, Collections.emptyMap());
-            Map<Long, Integer> movieFreqs = freq.getOrDefault(targetMovie, Collections.emptyMap());
-
-            for (Map.Entry<Long, Double> diffEntry : movieDiffs.entrySet()) {
-                Long relatedMovie = diffEntry.getKey();
-                if (targetMovies.contains(relatedMovie)) {
-                    continue;
-                }
-                double averageDiff = diffEntry.getValue() / movieFreqs.getOrDefault(relatedMovie, 1);
-                double predictedRating = targetRating + averageDiff;
-                predictions.merge(relatedMovie, predictedRating * movieFreqs.getOrDefault(relatedMovie, 1), Double::sum);
-                frequencies.merge(relatedMovie, movieFreqs.getOrDefault(relatedMovie, 1), Integer::sum);
-            }
-        }
-
-        Map<Long, Double> results = new HashMap<>();
-        for (Map.Entry<Long, Double> entry : predictions.entrySet()) {
-            int count = frequencies.getOrDefault(entry.getKey(), 1);
-            results.put(entry.getKey(), entry.getValue() / count);
-        }
-        return results;
-    }
-
-    /**
-     * 基于共有评分的余弦相似度计算。
-     */
-    private double cosineSimilarity(Map<Long, Double> ratingsA, Map<Long, Double> ratingsB) {
-        Set<Long> sharedMovies = new HashSet<>(ratingsA.keySet());
-        sharedMovies.retainAll(ratingsB.keySet());
-        if (sharedMovies.isEmpty()) {
-            return 0.0;
-        }
-        double dotProduct = 0.0;
-        double normA = 0.0;
-        double normB = 0.0;
-        for (Long movieId : sharedMovies) {
-            double ratingA = ratingsA.get(movieId);
-            double ratingB = ratingsB.get(movieId);
-            dotProduct += ratingA * ratingB;
-        }
-        for (double rating : ratingsA.values()) {
-            normA += rating * rating;
-        }
-        for (double rating : ratingsB.values()) {
-            normB += rating * rating;
-        }
-        if (normA == 0 || normB == 0) {
-            return 0.0;
-        }
-        return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-    }
-
-    /**
-     * 将电影 ID 与得分封装为传输对象；若电影不存在则返回 null 以便上游过滤。
-     */
     private RecommendationDto toRecommendationDto(Long movieId, double score) {
         Optional<MovieEntity> movieOpt = movieRepository.findById(movieId);
         if (!movieOpt.isPresent()) {

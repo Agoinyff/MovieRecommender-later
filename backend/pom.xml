@@ -47,6 +47,11 @@
             <artifactId>mahout-integration</artifactId>
             <version>0.13.0</version>
         </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-ui</artifactId>
+            <version>1.7.0</version>
+        </dependency>
 <!--        <dependency>-->
 <!--            <groupId>org.apache.mahout</groupId>-->
 <!--            <artifactId>mahout</artifactId>-->

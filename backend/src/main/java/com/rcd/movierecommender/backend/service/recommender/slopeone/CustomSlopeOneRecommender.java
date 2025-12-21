@@ -1,5 +1,6 @@
 package com.rcd.movierecommender.backend.service.recommender.slopeone;
 
+import org.apache.mahout.cf.taste.common.Refreshable;
 import org.apache.mahout.cf.taste.common.TasteException;
 import org.apache.mahout.cf.taste.impl.common.LongPrimitiveIterator;
 import org.apache.mahout.cf.taste.impl.recommender.AbstractRecommender;
@@ -8,139 +9,152 @@ import org.apache.mahout.cf.taste.model.DataModel;
 import org.apache.mahout.cf.taste.model.PreferenceArray;
 import org.apache.mahout.cf.taste.recommender.IDRescorer;
 import org.apache.mahout.cf.taste.recommender.RecommendedItem;
-import org.apache.mahout.cf.taste.common.Refreshable;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
- * A lightweight Slope One recommender that depends only on Mahout Taste {@link DataModel}/{@link org.apache.mahout.cf.taste.recommender.Recommender}.
+ * 自研 Slope One 推荐器（兼容你当前 Mahout 版本的 Recommender 接口签名）
  *
- * <p>This implementation pre-computes item-to-item deviations and frequencies from the {@link DataModel}
- * and uses them to estimate scores for unrated items. It intentionally avoids {@code mahout-integration}
- * modules that have been removed from newer releases.</p>
+ * 说明：
+ * - 模型构建交给 SlopeOneModel（职责分离）
+ * - 推荐阶段使用小顶堆维护 TopN（效率更高）
  */
 public class CustomSlopeOneRecommender extends AbstractRecommender {
 
-    private final DataModel dataModel;
-    private final Map<Long, Map<Long, DeviationStat>> deviations = new HashMap<>();
+    private final SlopeOneModel model;
 
     public CustomSlopeOneRecommender(DataModel dataModel) throws TasteException {
         super(dataModel);
-        this.dataModel = dataModel;
-        buildDeviations();
+        this.model = new SlopeOneModel(dataModel);
     }
 
+    /**
+     * 常用重载：默认不包含已评分物品
+     */
     @Override
     public List<RecommendedItem> recommend(long userID, int howMany) throws TasteException {
-        return recommend(userID, howMany, null);
+        return recommend(userID, howMany, null, false);
     }
 
+    /**
+     * 常用重载：支持 rescorer，默认不包含已评分物品
+     */
     @Override
     public List<RecommendedItem> recommend(long userID, int howMany, IDRescorer rescorer) throws TasteException {
-        PreferenceArray userPreferences = dataModel.getPreferencesFromUser(userID);
-        Set<Long> ratedItems = new HashSet<>();
-        for (int i = 0; i < userPreferences.length(); i++) {
-            ratedItems.add(userPreferences.getItemID(i));
+        return recommend(userID, howMany, rescorer, false);
+    }
+
+    /**
+     * 关键：你项目依赖的 Mahout 版本要求的 4 参数 recommend
+     */
+    @Override
+    public List<RecommendedItem> recommend(long userID,
+                                           int howMany,
+                                           IDRescorer rescorer,
+                                           boolean includeKnownItems) throws TasteException {
+
+        if (howMany <= 0) {
+            return Collections.emptyList();
         }
 
-        List<RecommendedItem> candidates = new ArrayList<>();
-        LongPrimitiveIterator itemIterator = dataModel.getItemIDs();
-        while (itemIterator.hasNext()) {
-            long itemId = itemIterator.nextLong();
-            if (ratedItems.contains(itemId)) {
+        DataModel dm = getDataModel();
+
+        // 获取用户评分
+        PreferenceArray userPrefs = dm.getPreferencesFromUser(userID);
+        if (userPrefs == null || userPrefs.length() == 0) {
+            throw new TasteException("用户不存在或无评分记录 userID=" + userID);
+        }
+
+        // 用户已评分物品集合（用于过滤）
+        Set<Long> rated = new HashSet<>();
+        for (int i = 0; i < userPrefs.length(); i++) {
+            rated.add(userPrefs.getItemID(i));
+        }
+
+        // TopN 小顶堆
+        PriorityQueue<RecommendedItem> topN =
+                new PriorityQueue<>(Comparator.comparing(RecommendedItem::getValue));
+
+        LongPrimitiveIterator itemIt = dm.getItemIDs();
+        while (itemIt.hasNext()) {
+            long itemID = itemIt.nextLong();
+
+            if (!includeKnownItems && rated.contains(itemID)) {
                 continue;
             }
-            double estimate = estimateFromUserPreferences(userPreferences, itemId);
-            if (Double.isNaN(estimate)) {
+
+            double est = estimateFromUserPreferences(userPrefs, itemID);
+            if (Double.isNaN(est)) {
                 continue;
             }
-            float finalScore = (float) estimate;
+
+            float score = (float) est;
+
+            // 过滤与重评分
             if (rescorer != null) {
-                if (rescorer.isFiltered(itemId)) {
+                if (rescorer.isFiltered(itemID)) {
                     continue;
                 }
-                finalScore = (float) rescorer.rescore(itemId, finalScore);
+                score = (float) rescorer.rescore(itemID, score);
             }
-            candidates.add(new GenericRecommendedItem(itemId, finalScore));
+
+            RecommendedItem rec = new GenericRecommendedItem(itemID, score);
+
+            if (topN.size() < howMany) {
+                topN.add(rec);
+            } else if (score > topN.peek().getValue()) {
+                topN.poll();
+                topN.add(rec);
+            }
         }
 
-        return candidates.stream()
-                .sorted(Comparator.comparing(RecommendedItem::getValue).reversed())
-                .limit(howMany)
-                .collect(Collectors.toList());
+        List<RecommendedItem> result = new ArrayList<>(topN);
+        result.sort((a, b) -> Float.compare(b.getValue(), a.getValue()));
+        return result;
     }
 
+    /**
+     * 预测评分：若用户已对 item 评分，则直接返回原评分；否则按 Slope One 预测
+     */
     @Override
     public float estimatePreference(long userID, long itemID) throws TasteException {
-        PreferenceArray userPreferences = dataModel.getPreferencesFromUser(userID);
-        double estimate = estimateFromUserPreferences(userPreferences, itemID);
-        if (Double.isNaN(estimate)) {
-            throw new TasteException("Not enough data to estimate preference for item " + itemID);
+        PreferenceArray userPrefs = getDataModel().getPreferencesFromUser(userID);
+        if (userPrefs == null || userPrefs.length() == 0) {
+            throw new TasteException("用户不存在或无评分记录 userID=" + userID);
         }
-        return (float) estimate;
-    }
 
-    @Override
-    public void setPreference(long userID, long itemID, float value) {
-        throw new UnsupportedOperationException("setPreference is not supported in CustomSlopeOneRecommender");
-    }
-
-    @Override
-    public void removePreference(long userID, long itemID) {
-        throw new UnsupportedOperationException("removePreference is not supported in CustomSlopeOneRecommender");
-    }
-
-    @Override
-    public DataModel getDataModel() {
-        return dataModel;
-    }
-
-    @Override
-    public void refresh(Collection<Refreshable> alreadyRefreshed) {
-        // Stateless after construction; no-op refresh.
-    }
-
-    private void buildDeviations() throws TasteException {
-        LongPrimitiveIterator userIterator = dataModel.getUserIDs();
-        while (userIterator.hasNext()) {
-            long userId = userIterator.nextLong();
-            PreferenceArray prefs = dataModel.getPreferencesFromUser(userId);
-            int size = prefs.length();
-            for (int i = 0; i < size; i++) {
-                long itemI = prefs.getItemID(i);
-                double valueI = prefs.getValue(i);
-                for (int j = i + 1; j < size; j++) {
-                    long itemJ = prefs.getItemID(j);
-                    double valueJ = prefs.getValue(j);
-                    addDeviation(itemI, itemJ, valueI - valueJ);
-                    addDeviation(itemJ, itemI, valueJ - valueI);
-                }
+        for (int i = 0; i < userPrefs.length(); i++) {
+            if (userPrefs.getItemID(i) == itemID) {
+                return userPrefs.getValue(i);
             }
         }
+
+        double est = estimateFromUserPreferences(userPrefs, itemID);
+        if (Double.isNaN(est)) {
+            throw new TasteException("无法预测评分：缺少共现数据 itemID=" + itemID + ", userID=" + userID);
+        }
+        return (float) est;
     }
 
-    private void addDeviation(long itemA, long itemB, double difference) {
-        Map<Long, DeviationStat> itemDeviation = deviations.computeIfAbsent(itemA, key -> new HashMap<>());
-        itemDeviation.computeIfAbsent(itemB, key -> new DeviationStat()).add(difference);
-    }
-
-    private double estimateFromUserPreferences(PreferenceArray userPreferences, long targetItemId) {
+    /**
+     * 给定用户评分列表，预测用户对 targetItem 的评分
+     *
+     * r̂(u,i) = Σ_j (r(u,j) + avgDiff(i,j)) * count(i,j) / Σ_j count(i,j)
+     */
+    private double estimateFromUserPreferences(PreferenceArray userPrefs, long targetItem) {
         double weightedSum = 0.0;
         int totalCount = 0;
 
-        for (int i = 0; i < userPreferences.length(); i++) {
-            long ratedItemId = userPreferences.getItemID(i);
-            if (ratedItemId == targetItemId) {
-                return Double.NaN;
-            }
+        for (int i = 0; i < userPrefs.length(); i++) {
+            long ratedItem = userPrefs.getItemID(i);
+            float ratedValue = userPrefs.getValue(i);
 
-            DeviationStat stat = getDeviation(targetItemId, ratedItemId);
+            DeviationStat stat = model.getDeviation(targetItem, ratedItem);
             if (stat == null || stat.getCount() == 0) {
                 continue;
             }
 
-            weightedSum += (stat.getAverage() + userPreferences.getValue(i)) * stat.getCount();
+            weightedSum += (ratedValue + stat.getAverage()) * stat.getCount();
             totalCount += stat.getCount();
         }
 
@@ -150,29 +164,15 @@ public class CustomSlopeOneRecommender extends AbstractRecommender {
         return weightedSum / totalCount;
     }
 
-    private DeviationStat getDeviation(long itemA, long itemB) {
-        Map<Long, DeviationStat> deviationsForItem = deviations.get(itemA);
-        if (deviationsForItem == null) {
-            return null;
-        }
-        return deviationsForItem.get(itemB);
-    }
-
-    private static class DeviationStat {
-        private double total = 0.0;
-        private int count = 0;
-
-        void add(double delta) {
-            total += delta;
-            count++;
-        }
-
-        double getAverage() {
-            return count == 0 ? Double.NaN : total / count;
-        }
-
-        int getCount() {
-            return count;
+    /**
+     * refresh：按需重建模型（实验阶段可用；生产可改为定时重建/增量更新）
+     */
+    @Override
+    public void refresh(Collection<Refreshable> alreadyRefreshed) {
+        try {
+            model.rebuild(getDataModel());
+        } catch (TasteException e) {
+            // 失败时不抛出运行时异常，避免影响系统可用性；可按需记录日志
         }
     }
 }

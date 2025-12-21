@@ -6,6 +6,7 @@ import com.rcd.movierecommender.backend.entity.MovieEntity;
 import com.rcd.movierecommender.backend.entity.RatingEntity;
 import com.rcd.movierecommender.backend.repository.MovieRepository;
 import com.rcd.movierecommender.backend.repository.RatingRepository;
+import com.rcd.movierecommender.backend.service.recommender.slopeone.CustomSlopeOneRecommender;
 import org.apache.mahout.cf.taste.common.TasteException;
 import org.apache.mahout.cf.taste.impl.model.GenericDataModel;
 import org.apache.mahout.cf.taste.impl.model.GenericPreference;
@@ -109,7 +110,6 @@ public class RecommendationService {
                 ItemSimilarity itemSimilarity = new LogLikelihoodSimilarity(dataModel);
                 return new GenericItemBasedRecommender(dataModel, itemSimilarity);
             case SLOPE_ONE:
-                //TODO 自研实现
                 return new CustomSlopeOneRecommender(dataModel);
             case USER_BASED:
             default:

@@ -5,6 +5,8 @@ public enum ErrorCode {
     VALIDATION_ERROR(40001, "请求参数校验失败"),
     MISSING_PARAMETER(40002, "缺少必填参数"),
     METHOD_NOT_ALLOWED(40500, "请求方法不被支持"),
+    DATABASE_ERROR(50010, "数据库访问异常"),
+    RECOMMENDATION_ENGINE_ERROR(50020, "推荐算法执行失败"),
     INTERNAL_ERROR(50000, "服务器内部错误");
 
     private final int code;

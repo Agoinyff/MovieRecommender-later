@@ -11,6 +11,10 @@ public enum RecommendationStrategy {
         if (value == null) {
             return USER_BASED;
         }
-        return RecommendationStrategy.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        try {
+            return RecommendationStrategy.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("不支持的推荐策略：" + value + "，可选值：USER_BASED、ITEM_BASED、SLOPE_ONE");
+        }
     }
 }

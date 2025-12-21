@@ -1,0 +1,14 @@
+# Maven
+backend/target/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+*.iml
+.idea/
+.vscode/
+
+# Mac
+.DS_Store

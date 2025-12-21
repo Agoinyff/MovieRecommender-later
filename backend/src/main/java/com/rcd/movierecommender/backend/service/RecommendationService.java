@@ -4,6 +4,8 @@ import com.rcd.movierecommender.backend.dto.RecommendationDto;
 import com.rcd.movierecommender.backend.dto.RecommendationStrategy;
 import com.rcd.movierecommender.backend.entity.MovieEntity;
 import com.rcd.movierecommender.backend.entity.RatingEntity;
+import com.rcd.movierecommender.backend.exception.BusinessException;
+import com.rcd.movierecommender.backend.exception.ErrorCode;
 import com.rcd.movierecommender.backend.repository.MovieRepository;
 import com.rcd.movierecommender.backend.repository.RatingRepository;
 import com.rcd.movierecommender.backend.service.recommender.slopeone.CustomSlopeOneRecommender;
@@ -26,6 +28,7 @@ import org.apache.mahout.cf.taste.recommender.RecommendedItem;
 import org.apache.mahout.cf.taste.similarity.ItemSimilarity;
 import org.apache.mahout.cf.taste.similarity.UserSimilarity;
 import org.apache.mahout.cf.taste.impl.common.FastByIDMap;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -77,22 +80,28 @@ public class RecommendationService {
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
         } catch (TasteException e) {
-            throw new IllegalStateException("Failed to generate recommendations with Mahout", e);
+            throw new BusinessException(ErrorCode.RECOMMENDATION_ENGINE_ERROR,
+                    "Mahout 推荐算法计算失败，无法生成推荐结果，原因：" + e.getMessage(), e, buildRootCause(e));
         }
     }
 
     private DataModel buildDataModel() {
-        FastByIDMap<PreferenceArray> preferenceMap = new FastByIDMap<>();
-        Map<Long, List<Preference>> preferences = new HashMap<>();
-        for (RatingEntity rating : ratingRepository.findAll()) {
-            preferences
-                    .computeIfAbsent(rating.getUserId(), id -> new ArrayList<>())
-                    .add(new GenericPreference(rating.getUserId(), rating.getMovieId(), rating.getPreference().floatValue()));
+        try {
+            FastByIDMap<PreferenceArray> preferenceMap = new FastByIDMap<>();
+            Map<Long, List<Preference>> preferences = new HashMap<>();
+            for (RatingEntity rating : ratingRepository.findAll()) {
+                preferences
+                        .computeIfAbsent(rating.getUserId(), id -> new ArrayList<>())
+                        .add(new GenericPreference(rating.getUserId(), rating.getMovieId(), rating.getPreference().floatValue()));
+            }
+            for (Map.Entry<Long, List<Preference>> entry : preferences.entrySet()) {
+                preferenceMap.put(entry.getKey(), new GenericUserPreferenceArray(entry.getValue()));
+            }
+            return new GenericDataModel(preferenceMap);
+        } catch (DataAccessException e) {
+            throw new BusinessException(ErrorCode.DATABASE_ERROR,
+                    "加载评分数据失败，无法构建推荐所需的数据模型", e, buildRootCause(e));
         }
-        for (Map.Entry<Long, List<Preference>> entry : preferences.entrySet()) {
-            preferenceMap.put(entry.getKey(), new GenericUserPreferenceArray(entry.getValue()));
-        }
-        return new GenericDataModel(preferenceMap);
     }
 
     private boolean userExists(Long userId, DataModel dataModel) {
@@ -120,11 +129,26 @@ public class RecommendationService {
     }
 
     private RecommendationDto toRecommendationDto(Long movieId, double score) {
-        Optional<MovieEntity> movieOpt = movieRepository.findById(movieId);
-        if (!movieOpt.isPresent()) {
-            return null;
+        try {
+            Optional<MovieEntity> movieOpt = movieRepository.findById(movieId);
+            if (!movieOpt.isPresent()) {
+                return null;
+            }
+            MovieEntity movie = movieOpt.get();
+            return new RecommendationDto(movie.getId(), movie.getName(), movie.getPublishedYear(), movie.getGenres(), score);
+        } catch (DataAccessException e) {
+            throw new BusinessException(ErrorCode.DATABASE_ERROR,
+                    "查询电影基础信息失败，无法返回完整的推荐结果", e, buildRootCause(e));
         }
-        MovieEntity movie = movieOpt.get();
-        return new RecommendationDto(movie.getId(), movie.getName(), movie.getPublishedYear(), movie.getGenres(), score);
+    }
+
+    private List<String> buildRootCause(Throwable ex) {
+        List<String> details = new ArrayList<>();
+        Throwable cause = ex.getCause();
+        while (cause != null) {
+            details.add(cause.getMessage());
+            cause = cause.getCause();
+        }
+        return details;
     }
 }

@@ -50,12 +50,11 @@ const emitSubmit = () => {
 
 <style scoped>
 .card {
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 20px;
-  padding: 18px;
-  box-shadow: 0 20px 55px rgba(15, 23, 42, 0.35);
-  backdrop-filter: blur(16px);
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.04);
   display: grid;
   gap: 12px;
 }
@@ -67,7 +66,7 @@ const emitSubmit = () => {
 
 label {
   font-weight: 600;
-  color: rgba(226, 232, 240, 0.85);
+  color: #4b5563;
 }
 
 input,
@@ -75,24 +74,22 @@ select,
 button {
   height: 42px;
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.4);
+  border: 1px solid #e5e7eb;
   padding: 0 12px;
   font-size: 15px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  background: rgba(15, 23, 42, 0.25);
-  color: #e2e8f0;
 }
 
 input:focus,
 select:focus,
 button:focus {
   outline: none;
-  border-color: #a5b4fc;
-  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.25);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
 
 button {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.9), rgba(14, 165, 233, 0.9));
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff;
   font-weight: 700;
   border: none;

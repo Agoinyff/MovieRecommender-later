@@ -1,13 +1,14 @@
 :root {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: #1f2937;
-  background-color: #f8fafc;
+  background-color: #fafbfc;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f8fafc;
+  background: linear-gradient(180deg, #fafbfc 0%, #f0f4f8 100%);
+  background-attachment: fixed;
 }
 
 * {
@@ -16,4 +17,71 @@ body {
 
 button {
   cursor: pointer;
+}
+
+/* 全局滚动条样式 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+}
+
+/* PrimeVue 组件样式覆盖 */
+.p-paginator {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.p-paginator .p-paginator-pages .p-paginator-page {
+  min-width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.p-paginator .p-paginator-pages .p-paginator-page.p-highlight {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border-color: transparent;
+}
+
+.p-dialog {
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(20px);
+}
+
+.p-dialog .p-dialog-header {
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid rgba(229, 231, 235, 0.6);
+}
+
+.p-dialog .p-dialog-content {
+  padding: 24px;
+}
+
+.p-dialog .p-dialog-footer {
+  padding: 16px 24px;
+  border-top: 1px solid rgba(229, 231, 235, 0.6);
+}
+
+.p-rating .p-rating-icon {
+  font-size: 18px;
+  color: #f59e0b;
 }

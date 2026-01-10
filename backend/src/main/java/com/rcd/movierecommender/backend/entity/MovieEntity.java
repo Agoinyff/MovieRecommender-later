@@ -1,27 +1,9 @@
 package com.rcd.movierecommender.backend.entity;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.Table;
-
-@Entity
-@Table(name = "movies")
 public class MovieEntity {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(nullable = false)
     private String name;
-
-    @Column(name = "published_year")
     private String publishedYear;
-
-    @Column(name = "type")
     private String genres;
 
     public Long getId() {

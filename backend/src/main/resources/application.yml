@@ -4,26 +4,13 @@ spring:
     username: root
     password: 123456
     driver-class-name: com.mysql.cj.jdbc.Driver
-  jpa:
-    hibernate:
-      ddl-auto: none
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: true
-        # 批量查询优化
-        jdbc:
-          batch_size: 50
-        order_inserts: true
-        order_updates: true
   jackson:
     serialization:
       WRITE_DATES_AS_TIMESTAMPS: false
-  cache:
-    type: caffeine
-    cache-names: dataModel,recommendations,movies
-    caffeine:
-      spec: maximumSize=1000,expireAfterWrite=1h
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
 
 server:
   port: 8080
@@ -32,5 +19,3 @@ logging:
   level:
     root: INFO
     com.rcd.movierecommender.backend: DEBUG
-    # 开启缓存日志，便于监控缓存效果
-    org.springframework.cache: DEBUG

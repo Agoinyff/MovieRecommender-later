@@ -13,10 +13,14 @@ export const getRecommendations = (params) => {
 };
 
 /**
- * 获取热门电影
+ * 获取热门电影（暂未实现，预留接口）
  * @param {Number} size - 返回条数
  */
 export const getPopularMovies = (size = 10) => {
-  return http.get('/recommendations/popular', { params: { size } });
+  // 如果后端实现了 /recommendations/popular 接口，取消下面的注释
+  // return http.get('/recommendations/popular', { params: { size } });
+  
+  // 临时方案：返回前 N 部电影
+  return http.get('/movies', { params: { page: 0, size } });
 };
 

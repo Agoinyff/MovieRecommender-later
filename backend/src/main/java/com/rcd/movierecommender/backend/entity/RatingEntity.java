@@ -3,7 +3,7 @@ package com.rcd.movierecommender.backend.entity;
 public class RatingEntity {
     private Long userId;
     private Long movieId;
-    private Integer preference;
+    private Double preference;
     private Long timestamp;
 
     public Long getUserId() {
@@ -22,11 +22,11 @@ public class RatingEntity {
         this.movieId = movieId;
     }
 
-    public Integer getPreference() {
+    public Double getPreference() {
         return preference;
     }
 
-    public void setPreference(Integer preference) {
+    public void setPreference(Double preference) {
         this.preference = preference;
     }
 

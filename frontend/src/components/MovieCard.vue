@@ -1,7 +1,15 @@
 <template>
   <div class="movie-card" @click="$emit('click', movie)">
     <div class="movie-poster">
-      <div class="poster-placeholder">
+      <img 
+        v-if="movie.posterUrl && !imageError" 
+        :src="movie.posterUrl" 
+        :alt="movie.name"
+        class="poster-image"
+        @error="handleImageError"
+        loading="lazy"
+      />
+      <div v-else class="poster-placeholder">
         <i class="pi pi-video"></i>
       </div>
       <div v-if="showScore && movie.score" class="score-badge">
@@ -24,6 +32,8 @@
 </template>
 
 <script setup>
+import { ref } from 'vue';
+
 const props = defineProps({
   movie: {
     type: Object,
@@ -36,6 +46,12 @@ const props = defineProps({
 });
 
 defineEmits(['click']);
+
+const imageError = ref(false);
+
+const handleImageError = () => {
+  imageError.value = true;
+};
 </script>
 
 <style scoped>
@@ -72,6 +88,17 @@ defineEmits(['click']);
   justify-content: center;
   color: rgba(255, 255, 255, 0.9);
   font-size: 48px;
+}
+
+.poster-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.movie-card:hover .poster-image {
+  transform: scale(1.05);
 }
 
 .score-badge {

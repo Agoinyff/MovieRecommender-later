@@ -11,27 +11,48 @@
     <p v-if="error" class="error">{{ error }}</p>
     <p v-else-if="!loading && recommendations.length === 0" class="muted">暂无数据，请先提交查询。</p>
 
-    <ul v-if="recommendations.length" class="list">
-      <li v-for="item in recommendations" :key="item.movieId" class="row">
-        <div>
-          <div class="title">{{ item.name }}</div>
-          <div class="meta">
-            <span>{{ item.publishedYear || '未知年份' }}</span>
-            <span v-if="item.genres">· {{ item.genres }}</span>
-          </div>
-        </div>
-        <span class="pill score">{{ item.score.toFixed(2) }}</span>
-      </li>
-    </ul>
+    <div v-if="recommendations.length" class="movies-grid">
+      <MovieCard
+        v-for="item in recommendations"
+        :key="item.movieId"
+        :movie="{ 
+          id: item.movieId, 
+          name: item.name, 
+          publishedYear: item.publishedYear, 
+          genres: item.genres,
+          posterUrl: item.posterUrl,
+          score: item.score 
+        }"
+        :show-score="true"
+        @click="handleMovieClick(item)"
+      />
+    </div>
   </div>
 </template>
 
 <script setup>
+import MovieCard from './MovieCard.vue';
+
 const props = defineProps({
   recommendations: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' }
 });
+
+const emit = defineEmits(['movie-click']);
+
+const handleMovieClick = (movie) => {
+  emit('movie-click', {
+    id: movie.movieId,
+    movieId: movie.movieId,
+    name: movie.name,
+    publishedYear: movie.publishedYear,
+    genres: movie.genres,
+    posterUrl: movie.posterUrl,
+    score: movie.score
+  });
+};
+
 </script>
 
 <style scoped>
@@ -47,7 +68,7 @@ const props = defineProps({
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
 }
 
 .hint {
@@ -61,30 +82,11 @@ h2 {
   margin: 4px 0 0;
 }
 
-.list {
-  list-style: none;
-  padding: 0;
-  margin: 12px 0 0;
+.movies-grid {
   display: grid;
-  gap: 10px;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-}
-
-.title {
-  font-weight: 700;
-}
-
-.meta {
-  color: #6b7280;
-  font-size: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+  margin-top: 16px;
 }
 
 .pill {
@@ -93,15 +95,12 @@ h2 {
   padding: 6px 10px;
   border-radius: 999px;
   font-weight: 700;
-}
-
-.pill.score {
-  background: #ecfeff;
-  color: #0ea5e9;
+  font-size: 13px;
 }
 
 .muted {
   color: #9ca3af;
+  margin-top: 12px;
 }
 
 .error {
@@ -110,5 +109,14 @@ h2 {
   padding: 10px;
   border-radius: 12px;
   border: 1px solid #fecaca;
+  margin-top: 12px;
+}
+
+@media (max-width: 768px) {
+  .movies-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+  }
 }
 </style>
+

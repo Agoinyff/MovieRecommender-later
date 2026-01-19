@@ -5,15 +5,17 @@ public class MovieDto {
     private String name;
     private String publishedYear;
     private String genres;
+    private String posterUrl;
 
     public MovieDto() {
     }
 
-    public MovieDto(Long id, String name, String publishedYear, String genres) {
+    public MovieDto(Long id, String name, String publishedYear, String genres, String posterUrl) {
         this.id = id;
         this.name = name;
         this.publishedYear = publishedYear;
         this.genres = genres;
+        this.posterUrl = posterUrl;
     }
 
     public Long getId() {
@@ -46,5 +48,13 @@ public class MovieDto {
 
     public void setGenres(String genres) {
         this.genres = genres;
+    }
+
+    public String getPosterUrl() {
+        return posterUrl;
+    }
+
+    public void setPosterUrl(String posterUrl) {
+        this.posterUrl = posterUrl;
     }
 }

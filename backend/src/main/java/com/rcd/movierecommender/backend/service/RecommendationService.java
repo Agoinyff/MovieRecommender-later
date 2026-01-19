@@ -16,7 +16,6 @@ import org.apache.mahout.cf.taste.impl.model.GenericUserPreferenceArray;
 import org.apache.mahout.cf.taste.impl.neighborhood.NearestNUserNeighborhood;
 import org.apache.mahout.cf.taste.impl.recommender.GenericItemBasedRecommender;
 import org.apache.mahout.cf.taste.impl.recommender.GenericUserBasedRecommender;
-import org.apache.mahout.cf.taste.impl.similarity.LogLikelihoodSimilarity;
 import org.apache.mahout.cf.taste.impl.similarity.PearsonCorrelationSimilarity;
 import org.apache.mahout.cf.taste.model.DataModel;
 import org.apache.mahout.cf.taste.model.Preference;
@@ -27,6 +26,8 @@ import org.apache.mahout.cf.taste.recommender.RecommendedItem;
 import org.apache.mahout.cf.taste.similarity.ItemSimilarity;
 import org.apache.mahout.cf.taste.similarity.UserSimilarity;
 import org.apache.mahout.cf.taste.impl.common.FastByIDMap;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,15 +45,18 @@ public class RecommendationService {
 
     private final RatingMapper ratingMapper;
     private final MovieMapper movieMapper;
+    private final CacheManager cacheManager;
 
     /**
      * 推荐服务核心：围绕用户评分构建三种策略（用户协同、物品协同、Slope One）。
      * 所有方法均在只读事务下执行，避免误写数据库。
      */
     public RecommendationService(RatingMapper ratingMapper,
-            MovieMapper movieMapper) {
+            MovieMapper movieMapper,
+            CacheManager cacheManager) {
         this.ratingMapper = ratingMapper;
         this.movieMapper = movieMapper;
+        this.cacheManager = cacheManager;
     }
 
     /**
@@ -81,8 +85,13 @@ public class RecommendationService {
         log.info("[性能监控] 推荐请求: userId={}, size={}, strategy={}", userId, size, strategy);
 
         try {
-            // 直接构建 DataModel（从缓存中获取）
-            DataModel dataModel = buildDataModel();
+            // 从缓存获取 DataModel（不触发构建）
+            DataModel dataModel = getDataModelFromCache();
+
+            if (dataModel == null) {
+                log.warn("数据模型尚未准备好，请稍后重试或查看 /api/model/status 获取构建状态");
+                return Collections.emptyList();
+            }
 
             // 打印数据模型统计信息
             try {
@@ -132,61 +141,73 @@ public class RecommendationService {
     }
 
     /**
-     * 构建数据模型，使用缓存机制避免重复加载。
-     * 缓存策略：全局共享，1小时过期。
-     * 采用分页加载避免一次性加载大量数据导致 OOM。
+     * 从缓存获取数据模型（不触发构建）
+     * 此方法供推荐接口调用，确保不阻塞请求
      */
-    @org.springframework.cache.annotation.Cacheable(value = "dataModel", key = "'global'")
+    private DataModel getDataModelFromCache() {
+        Cache cache = cacheManager.getCache("dataModel");
+        if (cache != null) {
+            Cache.ValueWrapper wrapper = cache.get("global");
+            if (wrapper != null) {
+                return (DataModel) wrapper.get();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 构建数据模型（仅供 ModelWarmupService 调用）
+     * 采用分页加载避免一次性加载大量数据导致 OOM。
+     * 
+     * 注意：此方法不再使用 @Cacheable 注解，缓存由 ModelWarmupService 手动管理
+     */
     public DataModel buildDataModel() {
         try {
-            log.info("开始构建数据模型...");
+            log.info("开始构建数据模型（流式加载）...");
             long startTime = System.currentTimeMillis();
 
             // 用户 -> 评分列表
             FastByIDMap<PreferenceArray> preferenceMap = new FastByIDMap<>();
             Map<Long, List<Preference>> preferences = new HashMap<>();
 
-            // 分页加载参数
-            int batchSize = 5000;
-            long totalCount = ratingMapper.countAllRatings();
-            int totalPages = (int) Math.ceil((double) totalCount / batchSize);
+            // 使用原子计数器记录进度
+            java.util.concurrent.atomic.AtomicLong loadedCount = new java.util.concurrent.atomic.AtomicLong(0);
+            java.util.concurrent.atomic.AtomicLong lastLogTime = new java.util.concurrent.atomic.AtomicLong(startTime);
 
-            log.info("评分总数: {}, 将分 {} 批加载数据，每批 {} 条", totalCount, totalPages, batchSize);
+            // 流式处理评分数据（只需一次数据库查询）
+            ratingMapper.streamAllRatings(resultContext -> {
+                RatingEntity rating = resultContext.getResultObject();
 
-            // 分批加载，避免 OOM
-            int loadedCount = 0;
-            for (int page = 0; page < totalPages; page++) {
-                int offset = page * batchSize;
-                List<RatingEntity> batch = ratingMapper.findRatingsByPage(offset, batchSize);
+                // 将评分数据添加到对应用户的偏好列表
+                preferences
+                        .computeIfAbsent(rating.getUserId(), id -> new ArrayList<>())
+                        .add(new GenericPreference(
+                                rating.getUserId(),
+                                rating.getMovieId(),
+                                rating.getPreference().floatValue()));
 
-                for (RatingEntity rating : batch) {
-                    preferences
-                            .computeIfAbsent(rating.getUserId(), id -> new ArrayList<>())
-                            .add(new GenericPreference(
-                                    rating.getUserId(),
-                                    rating.getMovieId(),
-                                    rating.getPreference().floatValue()));
+                long count = loadedCount.incrementAndGet();
+
+                // 每10万条记录一次进度（避免日志过多）
+                if (count % 100000 == 0) {
+                    long now = System.currentTimeMillis();
+                    long elapsed = now - lastLogTime.get();
+                    double speed = 100000.0 / (elapsed / 1000.0); // 条/秒
+                    log.info("已加载 {} 条数据，最近10万条耗时 {}ms，速度: {:.0f} 条/秒",
+                            count, elapsed, speed);
+                    lastLogTime.set(now);
                 }
+            });
 
-                loadedCount += batch.size();
-
-                // 每5批输出一次进度并建议 GC
-                if ((page + 1) % 5 == 0 || page == totalPages - 1) {
-                    log.info("已加载 {}/{} 条评分数据 ({}/{}页)", loadedCount, totalCount, page + 1, totalPages);
-                    if ((page + 1) % 5 == 0) {
-                        System.gc();
-                    }
-                }
-            }
-
-            log.info("评分数据加载完成，共 {} 条，涉及 {} 个用户", loadedCount, preferences.size());
+            log.info("评分数据加载完成，共 {} 条，涉及 {} 个用户", loadedCount.get(), preferences.size());
 
             // 构建用户偏好数组
+            log.info("开始构建用户偏好数组...");
             for (Map.Entry<Long, List<Preference>> entry : preferences.entrySet()) {
                 preferenceMap.put(entry.getKey(), new GenericUserPreferenceArray(entry.getValue()));
             }
 
-            preferences.clear();
+            preferences.clear(); // 释放临时Map内存
 
             long endTime = System.currentTimeMillis();
             log.info("数据模型构建完成，耗时: {} 秒", (endTime - startTime) / 1000.0);
@@ -196,9 +217,9 @@ public class RecommendationService {
             throw new BusinessException(ErrorCode.DATABASE_ERROR,
                     "加载评分数据失败，无法构建推荐所需的数据模型", e, buildRootCause(e));
         } catch (OutOfMemoryError e) {
-            log.error("内存溢出！请增加 JVM 堆内存大小（-Xmx 参数）或减小批次大小");
+            log.error("内存溢出！请增加 JVM 堆内存大小（-Xmx 参数）");
             throw new BusinessException(ErrorCode.DATABASE_ERROR,
-                    "数据量过大导致内存不足，请联系管理员增加服务器内存配置或优化数据规模", e);
+                    "数据量过大导致内存不足，请联系管理员增加服务器内存配置或启用数据采样", e);
         }
     }
 
@@ -216,7 +237,8 @@ public class RecommendationService {
     private Recommender buildRecommender(DataModel dataModel, RecommendationStrategy strategy) throws TasteException {
         switch (strategy) {
             case ITEM_BASED:
-                ItemSimilarity itemSimilarity = new LogLikelihoodSimilarity(dataModel);
+                // 使用 PearsonCorrelation 替代 LogLikelihood，更鲁棒，不易出错
+                ItemSimilarity itemSimilarity = new PearsonCorrelationSimilarity(dataModel);
                 return new GenericItemBasedRecommender(dataModel, itemSimilarity);
             case SLOPE_ONE:
                 return new CustomSlopeOneRecommender(dataModel);
@@ -261,6 +283,7 @@ public class RecommendationService {
                                 movie.getName(),
                                 movie.getPublishedYear(),
                                 movie.getGenres(),
+                                movie.getPosterUrl(),
                                 item.getValue());
                     })
                     .filter(Objects::nonNull)
@@ -282,7 +305,7 @@ public class RecommendationService {
                 return null;
             }
             return new RecommendationDto(movie.getId(), movie.getName(), movie.getPublishedYear(), movie.getGenres(),
-                    score);
+                    movie.getPosterUrl(), score);
         } catch (DataAccessException e) {
             throw new BusinessException(ErrorCode.DATABASE_ERROR,
                     "查询电影基础信息失败，无法返回完整的推荐结果", e, buildRootCause(e));

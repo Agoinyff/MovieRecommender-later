@@ -19,16 +19,55 @@
           <i class="pi pi-star"></i>
           <span>个性化推荐</span>
         </router-link>
+        <router-link to="/profile" class="nav-link">
+          <i class="pi pi-user"></i>
+          <span>我的评分</span>
+        </router-link>
+        <router-link to="/metrics" class="nav-link">
+          <i class="pi pi-chart-line"></i>
+          <span>系统监控</span>
+        </router-link>
         <router-link to="/about" class="nav-link">
           <i class="pi pi-info-circle"></i>
           <span>关于</span>
         </router-link>
+      </div>
+
+      <div class="nav-status">
+        <HealthStatusBadge :status="healthStatus" />
       </div>
     </div>
   </nav>
 </template>
 
 <script setup>
+import { ref, onMounted, onUnmounted } from 'vue';
+import { getSystemStatus } from '@/api';
+import HealthStatusBadge from './HealthStatusBadge.vue';
+
+const healthStatus = ref('unknown');
+let healthCheckInterval = null;
+
+const checkHealth = async () => {
+  try {
+    const status = await getSystemStatus();
+    healthStatus.value = status.status === 'ok' ? 'online' : 'error';
+  } catch (err) {
+    healthStatus.value = 'offline';
+  }
+};
+
+onMounted(() => {
+  checkHealth();
+  // Check health every 30 seconds
+  healthCheckInterval = setInterval(checkHealth, 30000);
+});
+
+onUnmounted(() => {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+  }
+});
 </script>
 
 <style scoped>
@@ -44,13 +83,14 @@
 }
 
 .navbar-container {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 0 24px;
   height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 24px;
 }
 
 .logo {
@@ -62,6 +102,7 @@
   color: #1f2937;
   text-decoration: none;
   transition: transform 0.2s ease;
+  white-space: nowrap;
 }
 
 .logo i {
@@ -75,7 +116,9 @@
 
 .nav-links {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex: 1;
+  justify-content: center;
 }
 
 .nav-link {
@@ -87,8 +130,9 @@
   color: #4b5563;
   text-decoration: none;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .nav-link i {
@@ -106,17 +150,43 @@
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
+.nav-status {
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 1024px) {
+  .nav-link {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+}
+
 @media (max-width: 768px) {
+  .navbar-container {
+    padding: 0 16px;
+  }
+
+  .logo span {
+    display: none;
+  }
+
+  .nav-links {
+    gap: 2px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  
   .nav-link span {
     display: none;
   }
   
-  .nav-links {
-    gap: 4px;
-  }
-  
   .nav-link {
-    padding: 10px 12px;
+    padding: 10px;
+  }
+
+  .nav-status {
+    display: none;
   }
 }
 </style>

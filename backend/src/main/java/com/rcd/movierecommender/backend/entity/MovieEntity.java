@@ -5,6 +5,7 @@ public class MovieEntity {
     private String name;
     private String publishedYear;
     private String genres;
+    private String posterUrl;
 
     public Long getId() {
         return id;
@@ -36,5 +37,13 @@ public class MovieEntity {
 
     public void setGenres(String genres) {
         this.genres = genres;
+    }
+
+    public String getPosterUrl() {
+        return posterUrl;
+    }
+
+    public void setPosterUrl(String posterUrl) {
+        this.posterUrl = posterUrl;
     }
 }

@@ -17,12 +17,19 @@
     <div v-if="movie" class="dialog-content">
       <div class="detail-poster">
         <div class="poster-wrapper">
-          <i class="pi pi-video"></i>
+          <img 
+            v-if="movie.posterUrl && !posterError" 
+            :src="movie.posterUrl" 
+            :alt="movie.name || movie.movieName"
+            class="poster-image"
+            @error="handlePosterError"
+          />
+          <i v-else class="pi pi-video"></i>
         </div>
       </div>
 
       <div class="detail-info">
-        <h2 class="detail-title">{{ movie.name }}</h2>
+        <h2 class="detail-title">{{ movie.name || movie.movieName }}</h2>
         
         <div class="detail-row" v-if="movie.publishedYear">
           <span class="label">上映年份</span>
@@ -34,9 +41,9 @@
           <span class="value">{{ movie.genres }}</span>
         </div>
 
-        <div class="detail-row" v-if="movie.movieId">
+        <div class="detail-row" v-if="movie.movieId || movie.id">
           <span class="label">电影 ID</span>
-          <span class="value">{{ movie.movieId }}</span>
+          <span class="value">{{ movie.movieId || movie.id }}</span>
         </div>
 
         <div class="detail-row" v-if="movie.score">
@@ -46,6 +53,21 @@
             <span class="score-value">{{ movie.score.toFixed(2) }}</span>
           </div>
         </div>
+
+        <div class="detail-row" v-if="movie.userRating">
+          <span class="label">我的评分</span>
+          <div class="score-display">
+            <RatingStars :modelValue="movie.userRating" :readonly="true" :size="20" />
+            <span class="score-value">{{ movie.userRating.toFixed(1) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rating-action">
+        <button @click="openRatingDialog" class="rate-btn">
+          <i class="pi pi-star"></i>
+          <span>{{ movie.userRating ? '修改评分' : '为这部电影评分' }}</span>
+        </button>
       </div>
     </div>
 
@@ -53,6 +75,13 @@
       <Button label="关闭" icon="pi pi-times" @click="closeDialog" class="p-button-text" />
     </template>
   </Dialog>
+
+  <RatingDialog
+    v-model:visible="ratingDialogVisible"
+    :movie="movie"
+    :userId="100"
+    @rating-submitted="handleRatingSubmitted"
+  />
 </template>
 
 <script setup>
@@ -60,6 +89,8 @@ import { ref, watch } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import Rating from 'primevue/rating';
+import RatingStars from './RatingStars.vue';
+import RatingDialog from './RatingDialog.vue';
 
 const props = defineProps({
   visible: {
@@ -72,12 +103,18 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['update:visible']);
+const emit = defineEmits(['update:visible', 'rating-updated']);
 
 const isVisible = ref(props.visible);
+const ratingDialogVisible = ref(false);
+const posterError = ref(false);
 
 watch(() => props.visible, (newVal) => {
   isVisible.value = newVal;
+  // Reset poster error when dialog opens
+  if (newVal) {
+    posterError.value = false;
+  }
 });
 
 watch(isVisible, (newVal) => {
@@ -86,6 +123,22 @@ watch(isVisible, (newVal) => {
 
 const closeDialog = () => {
   isVisible.value = false;
+};
+
+const openRatingDialog = () => {
+  ratingDialogVisible.value = true;
+};
+
+const handlePosterError = () => {
+  posterError.value = true;
+};
+
+const handleRatingSubmitted = (ratingData) => {
+  emit('rating-updated', ratingData);
+  // Optionally update local movie data
+  if (props.movie) {
+    props.movie.userRating = ratingData.rating;
+  }
 };
 </script>
 
@@ -125,6 +178,13 @@ const closeDialog = () => {
   color: rgba(255, 255, 255, 0.9);
   font-size: 64px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.poster-wrapper .poster-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .detail-info {
@@ -170,6 +230,37 @@ const closeDialog = () => {
   font-weight: 700;
   font-size: 18px;
   color: #f59e0b;
+}
+
+.rating-action {
+  margin-top: 8px;
+}
+
+.rate-btn {
+  width: 100%;
+  height: 52px;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 16px rgba(251, 191, 36, 0.3);
+}
+
+.rate-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(251, 191, 36, 0.4);
+}
+
+.rate-btn i {
+  font-size: 20px;
 }
 </style>
 

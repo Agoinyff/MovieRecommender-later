@@ -27,7 +27,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleMethodArgumentNotValid(MethodArgumentNotValidException ex,
-                                                                         HttpServletRequest request) {
+            HttpServletRequest request) {
         List<String> details = ex.getBindingResult().getFieldErrors().stream()
                 .map(error -> String.format("%s %s", error.getField(), error.getDefaultMessage()))
                 .collect(Collectors.toList());
@@ -38,7 +38,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiErrorResponse> handleConstraintViolation(ConstraintViolationException ex,
-                                                                      HttpServletRequest request) {
+            HttpServletRequest request) {
         List<String> details = ex.getConstraintViolations().stream()
                 .map(violation -> String.format("%s %s", violation.getPropertyPath(), violation.getMessage()))
                 .collect(Collectors.toList());
@@ -47,7 +47,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
-    @ExceptionHandler({MissingServletRequestParameterException.class, BindException.class})
+    @ExceptionHandler({ MissingServletRequestParameterException.class, BindException.class })
     public ResponseEntity<ApiErrorResponse> handleMissingParameter(Exception ex, HttpServletRequest request) {
         ApiErrorResponse response = ApiErrorResponse.of(ErrorCode.MISSING_PARAMETER,
                 ex.getMessage(), request.getRequestURI(), null);
@@ -56,7 +56,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleMessageNotReadable(HttpMessageNotReadableException ex,
-                                                                     HttpServletRequest request) {
+            HttpServletRequest request) {
         ApiErrorResponse response = ApiErrorResponse.of(ErrorCode.BAD_REQUEST,
                 "无法读取请求体，请检查 JSON 格式", request.getRequestURI(), null);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
@@ -64,24 +64,31 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,
-                                                                     HttpServletRequest request) {
+            HttpServletRequest request) {
         ApiErrorResponse response = ApiErrorResponse.of(ErrorCode.METHOD_NOT_ALLOWED,
                 ex.getMessage(), request.getRequestURI(), null);
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(response);
     }
 
-    @ExceptionHandler({IllegalArgumentException.class})
+    @ExceptionHandler({ IllegalArgumentException.class })
     public ResponseEntity<ApiErrorResponse> handleIllegalArgument(IllegalArgumentException ex,
-                                                                  HttpServletRequest request) {
+            HttpServletRequest request) {
+        log.error("IllegalArgumentException: {}, Request: {}", ex.getMessage(), request.getRequestURI(), ex);
+        List<String> details = new ArrayList<>();
+        details.add(ex.getMessage());
+        if (ex.getCause() != null) {
+            details.add("Cause: " + ex.getCause().getMessage());
+        }
         ApiErrorResponse response = ApiErrorResponse.of(ErrorCode.BAD_REQUEST,
-                ex.getMessage(), request.getRequestURI(), null);
+                ex.getMessage(), request.getRequestURI(), details);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiErrorResponse> handleBusinessException(BusinessException ex, HttpServletRequest request) {
         ApiErrorResponse response = ApiErrorResponse.of(ex.getErrorCode(),
-                ex.getMessage(), request.getRequestURI(), ex.getDetails().isEmpty() ? buildRootCause(ex) : ex.getDetails());
+                ex.getMessage(), request.getRequestURI(),
+                ex.getDetails().isEmpty() ? buildRootCause(ex) : ex.getDetails());
         return ResponseEntity.status(resolveHttpStatus(ex.getErrorCode())).body(response);
     }
 
@@ -95,7 +102,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(org.apache.mahout.cf.taste.common.TasteException.class)
     public ResponseEntity<ApiErrorResponse> handleTasteException(org.apache.mahout.cf.taste.common.TasteException ex,
-                                                                 HttpServletRequest request) {
+            HttpServletRequest request) {
         ApiErrorResponse response = ApiErrorResponse.of(ErrorCode.RECOMMENDATION_ENGINE_ERROR,
                 "推荐算法执行失败：" + ex.getMessage(), request.getRequestURI(), buildRootCause(ex));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
@@ -120,7 +127,8 @@ public class GlobalExceptionHandler {
     }
 
     private HttpStatus resolveHttpStatus(ErrorCode errorCode) {
-        List<ErrorCode> badRequestCodes = Arrays.asList(ErrorCode.BAD_REQUEST, ErrorCode.VALIDATION_ERROR, ErrorCode.MISSING_PARAMETER);
+        List<ErrorCode> badRequestCodes = Arrays.asList(ErrorCode.BAD_REQUEST, ErrorCode.VALIDATION_ERROR,
+                ErrorCode.MISSING_PARAMETER);
         if (badRequestCodes.contains(errorCode)) {
             return HttpStatus.BAD_REQUEST;
         }

@@ -9,60 +9,68 @@ import java.util.List;
 @Mapper
 public interface RatingMapper {
 
-    /**
-     * 查询所有评分数据，用于构建 Mahout DataModel。
-     */
-    @Select("SELECT userID AS userId, movieID AS movieId, preference, timestamp FROM movie_preferences")
-    List<RatingEntity> findAllRatings();
+        /**
+         * 查询所有评分数据，用于构建 Mahout DataModel。
+         */
+        @Select("SELECT userID AS userId, movieID AS movieId, preference, timestamp FROM movie_preferences")
+        List<RatingEntity> findAllRatings();
 
-    /**
-     * 查询评分总数（用于健康检查接口）。
-     */
-    @Select("SELECT COUNT(*) FROM movie_preferences")
-    long countRatings();
+        /**
+         * 统计评分总数（用于健康检查和分页加载）。
+         * 使用全局超时配置（30秒），适应大数据量查询。
+         */
+        @Select("SELECT COUNT(*) FROM movie_preferences")
 
-    /**
-     * 分页查询评分数据，用于批量加载避免 OOM。
-     * 
-     * @param offset 偏移量
-     * @param limit  每批数量
-     * @return 评分数据列表
-     */
-    @Select("SELECT userID AS userId, movieID AS movieId, preference, timestamp " +
-            "FROM movie_preferences " +
-            "LIMIT #{limit} OFFSET #{offset}")
-    List<RatingEntity> findRatingsByPage(@org.apache.ibatis.annotations.Param("offset") int offset,
-            @org.apache.ibatis.annotations.Param("limit") int limit);
+        long countRatings();
 
-    /**
-     * 统计评分总数（用于分页加载）。
-     */
-    @Select("SELECT COUNT(*) FROM movie_preferences")
-    long countAllRatings();
+        /**
+         * 分页查询评分数据，用于批量加载避免 OOM。
+         * 
+         * @param offset 偏移量
+         * @param limit  每批数量
+         * @return 评分数据列表
+         */
+        @Select("SELECT userID AS userId, movieID AS movieId, preference, timestamp " +
+                        "FROM movie_preferences " +
+                        "LIMIT #{limit} OFFSET #{offset}")
+        List<RatingEntity> findRatingsByPage(@org.apache.ibatis.annotations.Param("offset") int offset,
+                        @org.apache.ibatis.annotations.Param("limit") int limit);
 
-    /**
-     * 插入或更新用户评分
-     * 
-     * @param userId     用户 ID
-     * @param movieId    电影 ID
-     * @param preference 评分
-     * @param timestamp  时间戳
-     */
-    @org.apache.ibatis.annotations.Insert("INSERT INTO movie_preferences (userID, movieID, preference, timestamp) " +
-            "VALUES (#{userId}, #{movieId}, #{preference}, #{timestamp}) " +
-            "ON DUPLICATE KEY UPDATE preference = #{preference}, timestamp = #{timestamp}")
-    void insertOrUpdate(@org.apache.ibatis.annotations.Param("userId") Long userId,
-            @org.apache.ibatis.annotations.Param("movieId") Long movieId,
-            @org.apache.ibatis.annotations.Param("preference") Double preference,
-            @org.apache.ibatis.annotations.Param("timestamp") Long timestamp);
+        /**
+         * 流式查询所有评分数据（性能优化版本）
+         * 使用 ResultHandler 和数据库游标，避免一次性加载大量数据到内存
+         * 
+         * @param handler 结果处理器，逐行处理数据
+         */
+        @Select("SELECT userID AS userId, movieID AS movieId, preference, timestamp FROM movie_preferences")
+        @org.apache.ibatis.annotations.ResultType(RatingEntity.class) // 指定ResultHandler的结果类型
+        @org.apache.ibatis.annotations.Options(fetchSize = 10000) // 数据库游标每次预取10000条
+        void streamAllRatings(org.apache.ibatis.session.ResultHandler<RatingEntity> handler);
 
-    /**
-     * 查询指定用户的所有评分
-     * 
-     * @param userId 用户 ID
-     * @return 评分列表
-     */
-    @Select("SELECT userID AS userId, movieID AS movieId, preference, timestamp " +
-            "FROM movie_preferences WHERE userID = #{userId} ORDER BY timestamp DESC")
-    List<RatingEntity> findByUserId(@org.apache.ibatis.annotations.Param("userId") Long userId);
+        /**
+         * 插入或更新用户评分
+         * 
+         * @param userId     用户 ID
+         * @param movieId    电影 ID
+         * @param preference 评分
+         * @param timestamp  时间戳
+         */
+        @org.apache.ibatis.annotations.Insert("INSERT INTO movie_preferences (userID, movieID, preference, timestamp) "
+                        +
+                        "VALUES (#{userId}, #{movieId}, #{preference}, #{timestamp}) " +
+                        "ON DUPLICATE KEY UPDATE preference = #{preference}, timestamp = #{timestamp}")
+        void insertOrUpdate(@org.apache.ibatis.annotations.Param("userId") Long userId,
+                        @org.apache.ibatis.annotations.Param("movieId") Long movieId,
+                        @org.apache.ibatis.annotations.Param("preference") Double preference,
+                        @org.apache.ibatis.annotations.Param("timestamp") Long timestamp);
+
+        /**
+         * 查询指定用户的所有评分
+         * 
+         * @param userId 用户 ID
+         * @return 评分列表
+         */
+        @Select("SELECT userID AS userId, movieID AS movieId, preference, timestamp " +
+                        "FROM movie_preferences WHERE userID = #{userId} ORDER BY timestamp DESC")
+        List<RatingEntity> findByUserId(@org.apache.ibatis.annotations.Param("userId") Long userId);
 }

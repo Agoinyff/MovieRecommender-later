@@ -5,16 +5,19 @@ public class RecommendationDto {
     private String name;
     private String publishedYear;
     private String genres;
+    private String posterUrl;
     private double score;
 
     public RecommendationDto() {
     }
 
-    public RecommendationDto(Long movieId, String name, String publishedYear, String genres, double score) {
+    public RecommendationDto(Long movieId, String name, String publishedYear, String genres, String posterUrl,
+            double score) {
         this.movieId = movieId;
         this.name = name;
         this.publishedYear = publishedYear;
         this.genres = genres;
+        this.posterUrl = posterUrl;
         this.score = score;
     }
 
@@ -56,5 +59,13 @@ public class RecommendationDto {
 
     public void setScore(double score) {
         this.score = score;
+    }
+
+    public String getPosterUrl() {
+        return posterUrl;
+    }
+
+    public void setPosterUrl(String posterUrl) {
+        this.posterUrl = posterUrl;
     }
 }

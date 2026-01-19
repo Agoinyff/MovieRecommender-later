@@ -46,7 +46,8 @@ public class MetricsController {
                 CacheStats cacheStats = nativeCache.stats();
 
                 Map<String, Object> cacheInfo = new HashMap<>();
-                cacheInfo.put("hitRate", String.format("%.2f%%", cacheStats.hitRate() * 100));
+                // 返回纯数字格式（0-1之间的小数），前端会格式化显示
+                cacheInfo.put("hitRate", cacheStats.hitRate());
                 cacheInfo.put("hitCount", cacheStats.hitCount());
                 cacheInfo.put("missCount", cacheStats.missCount());
                 cacheInfo.put("loadSuccessCount", cacheStats.loadSuccessCount());
@@ -70,11 +71,12 @@ public class MetricsController {
     @Operation(summary = "获取内存统计", description = "返回当前 JVM 的总内存、已用内存、空闲内存、最大内存等信息")
     public Map<String, Long> getMemoryStats() {
         Runtime runtime = Runtime.getRuntime();
-        return Map.of(
-                "totalMemoryMB", runtime.totalMemory() / (1024 * 1024),
-                "freeMemoryMB", runtime.freeMemory() / (1024 * 1024),
-                "usedMemoryMB", (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024),
-                "maxMemoryMB", runtime.maxMemory() / (1024 * 1024));
+        Map<String, Long> memoryStats = new HashMap<>();
+        memoryStats.put("totalMemoryMB", runtime.totalMemory() / (1024 * 1024));
+        memoryStats.put("freeMemoryMB", runtime.freeMemory() / (1024 * 1024));
+        memoryStats.put("usedMemoryMB", (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024));
+        memoryStats.put("maxMemoryMB", runtime.maxMemory() / (1024 * 1024));
+        return memoryStats;
     }
 
     /**
@@ -91,6 +93,9 @@ public class MetricsController {
                 cache.clear();
             }
         }
-        return Map.of("status", "success", "message", "所有缓存已清除");
+        Map<String, String> result = new HashMap<>();
+        result.put("status", "success");
+        result.put("message", "所有缓存已清除");
+        return result;
     }
 }

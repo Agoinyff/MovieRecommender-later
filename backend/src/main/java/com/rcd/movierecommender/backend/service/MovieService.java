@@ -75,8 +75,14 @@ public class MovieService {
 
     /**
      * 实体转为传输对象，隔离对外暴露字段。
+     * 直接返回数据库中的 posterUrl，不再同步调用 TMDb API 以提升性能。
      */
     private MovieDto toDto(MovieEntity entity) {
-        return new MovieDto(entity.getId(), entity.getName(), entity.getPublishedYear(), entity.getGenres());
+        return new MovieDto(
+                entity.getId(),
+                entity.getName(),
+                entity.getPublishedYear(),
+                entity.getGenres(),
+                entity.getPosterUrl());
     }
 }

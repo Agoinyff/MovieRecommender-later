@@ -11,6 +11,7 @@ spring:
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
+    default-statement-timeout: 30  # 默认查询超时30秒
 
 server:
   port: 8080
@@ -20,3 +21,18 @@ logging:
     root: INFO
     com.rcd.movierecommender.backend: DEBUG
     org.springframework.cache: DEBUG
+
+# 数据模型构建配置
+model:
+  build:
+    cron: "0 0 * * * ?"      # 每小时执行一次
+    timeout: 300000           # 构建超时时间（5分钟）
+    startup-delay: 30000      # 启动后延迟30秒开始预热
+
+# TMDb API 配置
+tmdb:
+  api:
+    key: 764d5a982fef573bdd8da60b1a23224e
+    read-token: eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI3NjRkNWE5ODJmZWY1NzNiZGQ4ZGE2MGIxYTIzMjI0ZSIsIm5iZiI6MTc2ODc5Mjk1Mi45ODUsInN1YiI6IjY5NmRhMzc4OTNiOGRiY2I2OThmY2RmYyIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.XTnl6GtxkBtcuWjfTcWk-JfIJRlXn7KCpNylArl9ung
+    base-url: https://api.themoviedb.org/3
+    image-base-url: https://image.tmdb.org/t/p/w500

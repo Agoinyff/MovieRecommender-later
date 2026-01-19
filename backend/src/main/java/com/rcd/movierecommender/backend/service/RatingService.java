@@ -37,6 +37,9 @@ public class RatingService {
     @Autowired
     private CacheManager cacheManager;
 
+    @Autowired
+    private ModelWarmupService modelWarmupService;
+
     /**
      * 保存或更新用户评分
      * 保存后清除相关缓存，确保推荐结果实时更新
@@ -48,13 +51,17 @@ public class RatingService {
     @Transactional
     public void saveRating(Long userId, Long movieId, Double rating) {
         try {
-            long timestamp = System.currentTimeMillis();
+            long timestamp = System.currentTimeMillis() / 1000; // 转换为秒级时间戳，适配 INT 类型
             ratingMapper.insertOrUpdate(userId, movieId, rating, timestamp);
             log.info("用户 {} 对电影 {} 的评分已保存: {}", userId, movieId, rating);
 
-            // 清除缓存，触发数据模型重建
+            // 清除缓存，并异步触发数据模型重建
             clearDataModelCache();
             clearUserRecommendationCache(userId);
+
+            // 异步重建数据模型，使新评分立即生效
+            modelWarmupService.warmupDataModel();
+            log.info("已触发数据模型异步重建，新评分将在重建完成后生效");
         } catch (Exception e) {
             log.error("保存评分失败", e);
             throw new BusinessException(ErrorCode.DATABASE_ERROR, "保存评分失败", e);

@@ -23,6 +23,18 @@ const routes = [
     meta: { title: '个性化推荐' }
   },
   {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('@/views/UserProfilePage.vue'),
+    meta: { title: '我的评分' }
+  },
+  {
+    path: '/metrics',
+    name: 'Metrics',
+    component: () => import('@/views/MetricsPage.vue'),
+    meta: { title: '系统监控' }
+  },
+  {
     path: '/about',
     name: 'About',
     component: () => import('@/views/AboutPage.vue'),

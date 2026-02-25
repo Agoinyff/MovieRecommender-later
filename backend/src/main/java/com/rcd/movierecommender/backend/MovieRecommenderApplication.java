@@ -3,9 +3,13 @@ package com.rcd.movierecommender.backend;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @MapperScan("com.rcd.movierecommender.backend.mapper")
+@EnableScheduling
+@EnableAsync
 public class MovieRecommenderApplication {
 
     public static void main(String[] args) {

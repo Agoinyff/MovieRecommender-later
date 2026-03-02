@@ -27,7 +27,7 @@ model:
   build:
     cron: "0 0 * * * ?"      # 每小时执行一次
     timeout: 300000           # 构建超时时间（5分钟）
-    startup-delay: 30000      # 启动后延迟30秒开始预热
+    startup-delay: 5000      # 启动后延迟30秒开始预热
 
 # TMDb API 配置
 tmdb:

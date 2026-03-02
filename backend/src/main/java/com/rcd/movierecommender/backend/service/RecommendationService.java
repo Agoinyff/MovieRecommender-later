@@ -28,6 +28,7 @@ import org.apache.mahout.cf.taste.similarity.UserSimilarity;
 import org.apache.mahout.cf.taste.impl.common.FastByIDMap;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,7 +78,7 @@ public class RecommendationService {
      * @param strategy 推荐策略（用户、物品、Slope One）。
      * @return 推荐结果列表。
      */
-    @org.springframework.cache.annotation.Cacheable(value = "recommendations", key = "#userId + '_' + #size + '_' + #strategy", unless = "#result.isEmpty()")
+    @Cacheable(value = "recommendations", key = "#userId + '_' + #size + '_' + #strategy", unless = "#result.isEmpty()")
     public List<RecommendationDto> recommend(Long userId, int size, RecommendationStrategy strategy) {
         long startTime = System.currentTimeMillis();
         long startMemory = getUsedMemory();

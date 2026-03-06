@@ -1,15 +1,19 @@
-<template>
+﻿<template>
   <div class="recommendations-page">
     <div class="page-container">
       <header class="page-header">
         <div>
           <h1 class="page-title">个性化推荐</h1>
-          <p class="page-description">基于协同过滤算法，为你精准推荐电影</p>
+          <p class="page-description">默认围绕当前登录用户生成推荐，管理员可额外按用户 ID 代查。</p>
+        </div>
+        <div class="identity-banner">
+          <span class="identity-pill">当前登录：{{ authStore.user.displayName }} (#{{ authStore.user.id }})</span>
+          <span class="identity-pill role">{{ authStore.isAdmin ? '管理员视角' : '普通用户视角' }}</span>
+          <span v-if="effectiveUserId" class="identity-pill target">推荐目标：{{ effectiveUserId }}</span>
         </div>
       </header>
 
       <div class="content-layout">
-        <!-- 推荐表单 -->
         <aside class="sidebar">
           <div class="form-card">
             <h3 class="form-title">
@@ -18,14 +22,14 @@
             </h3>
 
             <form @submit.prevent="handleSubmit" class="form">
-              <div class="form-field">
-                <label>用户 ID</label>
+              <div v-if="authStore.isAdmin" class="form-field">
+                <label>查询用户 ID（管理员）</label>
                 <input
                   v-model.number="form.userId"
                   type="number"
                   min="1"
-                  required
                   class="input"
+                  placeholder="留空则使用当前登录用户"
                 />
               </div>
 
@@ -40,13 +44,7 @@
 
               <div class="form-field">
                 <label>返回条数</label>
-                <input
-                  v-model.number="form.size"
-                  type="number"
-                  min="1"
-                  max="50"
-                  class="input"
-                />
+                <input v-model.number="form.size" type="number" min="1" max="50" class="input" />
               </div>
 
               <button type="submit" :disabled="loading" class="submit-btn">
@@ -55,21 +53,20 @@
               </button>
             </form>
 
-            <div v-if="algorithmInfo" class="algorithm-info">
+            <div class="algorithm-info">
               <p class="info-title">算法说明</p>
               <p class="info-text">{{ algorithmInfo }}</p>
             </div>
           </div>
         </aside>
 
-        <!-- 推荐结果 -->
         <main class="main-content">
           <div v-if="!hasSearched" class="welcome-state">
             <div class="welcome-icon">
               <i class="pi pi-star-fill"></i>
             </div>
-            <h2>开始你的电影探索之旅</h2>
-            <p>输入用户 ID 并选择推荐算法，系统将为你生成个性化的电影推荐列表</p>
+            <h2>你的推荐会围绕当前登录账号持续更新</h2>
+            <p>评分越多，结果越稳定。管理员也可以在左侧直接输入用户 ID 观察不同用户画像。</p>
           </div>
 
           <LoadingSpinner v-else-if="loading" message="正在计算推荐结果..." />
@@ -81,7 +78,7 @@
 
           <div v-else-if="recommendations.length === 0" class="empty-state">
             <i class="pi pi-inbox"></i>
-            <p>暂无推荐结果</p>
+            <p>当前暂无推荐结果，建议先去电影详情页完成几次评分。</p>
           </div>
 
           <Transition name="fade">
@@ -97,11 +94,11 @@
               <TransitionGroup name="movie-list" tag="div" class="recommendations-grid">
                 <MovieCard
                   v-for="(movie, index) in recommendations"
-                  :key="movie.movieId"
+                  :key="movie.movieId || movie.id"
                   :movie="movie"
                   :show-score="true"
                   @click="showMovieDetail"
-                  :style="{ transitionDelay: `${index * 50}ms` }"
+                  :style="{ transitionDelay: `${index * 40}ms` }"
                 />
               </TransitionGroup>
             </div>
@@ -113,19 +110,23 @@
     <MovieDetailDialog
       v-model:visible="dialogVisible"
       :movie="selectedMovie"
+      :recommendation-user-id="effectiveUserId"
+      @rating-updated="handleRatingUpdated"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { getRecommendations } from '@/api';
+import { useAuthStore } from '@/store/auth';
 import MovieCard from '@/components/MovieCard.vue';
 import MovieDetailDialog from '@/components/MovieDetailDialog.vue';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
 
+const authStore = useAuthStore();
 const form = ref({
-  userId: 100,
+  userId: null,
   strategy: 'USER_BASED',
   size: 12
 });
@@ -137,11 +138,13 @@ const error = ref('');
 const dialogVisible = ref(false);
 const selectedMovie = ref(null);
 
+const effectiveUserId = computed(() => form.value.userId || authStore.user.id);
+
 const algorithmInfo = computed(() => {
   const infos = {
-    USER_BASED: '基于用户协同过滤算法，通过分析相似用户的喜好来推荐电影。适合冷启动场景。',
-    ITEM_BASED: '基于物品协同过滤算法，通过分析电影之间的相似度来推荐。推荐结果更稳定。',
-    SLOPE_ONE: '基于评分差值的预测算法，计算速度快，适合大规模数据集。'
+    USER_BASED: '依据与你兴趣相似的用户行为生成推荐，适合已经有一定评分积累的用户。',
+    ITEM_BASED: '优先寻找与你高分电影相似的作品，结果更稳定，也更适合详情页联动展示。',
+    SLOPE_ONE: '基于评分差值快速预测，适合大数据量场景下快速给出结果。'
   };
   return infos[form.value.strategy];
 });
@@ -150,13 +153,16 @@ const handleSubmit = async () => {
   loading.value = true;
   error.value = '';
   hasSearched.value = true;
-  
+
   try {
-    const data = await getRecommendations({
-      userId: form.value.userId,
+    const params = {
       strategy: form.value.strategy,
       size: form.value.size
-    });
+    };
+    if (authStore.isAdmin && form.value.userId) {
+      params.userId = form.value.userId;
+    }
+    const data = await getRecommendations(params);
     recommendations.value = data || [];
   } catch (err) {
     error.value = err.response?.data?.message || err.message || '获取推荐失败';
@@ -170,6 +176,17 @@ const showMovieDetail = (movie) => {
   selectedMovie.value = movie;
   dialogVisible.value = true;
 };
+
+const handleRatingUpdated = async () => {
+  if (!hasSearched.value || (authStore.isAdmin && form.value.userId)) {
+    return;
+  }
+  await handleSubmit();
+};
+
+onMounted(() => {
+  handleSubmit();
+});
 </script>
 
 <style scoped>
@@ -185,6 +202,9 @@ const showMovieDetail = (movie) => {
 }
 
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
   margin-bottom: 32px;
 }
 
@@ -199,6 +219,34 @@ const showMovieDetail = (movie) => {
   margin: 0;
   font-size: 16px;
   color: #6b7280;
+}
+
+.identity-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-content: flex-start;
+  justify-content: flex-end;
+}
+
+.identity-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(229, 231, 235, 0.7);
+  color: #374151;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.identity-pill.role {
+  color: #4f46e5;
+}
+
+.identity-pill.target {
+  background: rgba(79, 70, 229, 0.08);
 }
 
 .content-layout {
@@ -324,9 +372,11 @@ const showMovieDetail = (movie) => {
   min-height: 500px;
 }
 
-.welcome-state {
+.welcome-state,
+.empty-state,
+.error-message {
   text-align: center;
-  padding: 100px 40px;
+  padding: 80px 24px;
 }
 
 .welcome-icon {
@@ -341,16 +391,6 @@ const showMovieDetail = (movie) => {
   font-size: 56px;
   color: #fff;
   box-shadow: 0 20px 50px rgba(99, 102, 241, 0.3);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
 }
 
 .welcome-state h2 {
@@ -360,62 +400,18 @@ const showMovieDetail = (movie) => {
   color: #1f2937;
 }
 
-.welcome-state p {
-  margin: 0;
+.welcome-state p,
+.empty-state p,
+.error-message p {
+  margin: 0 auto;
+  max-width: 520px;
   font-size: 16px;
   line-height: 1.6;
   color: #6b7280;
-  max-width: 500px;
-  margin: 0 auto;
 }
 
 .error-message {
-  text-align: center;
-  padding: 60px 20px;
   color: #dc2626;
-}
-
-.error-message i {
-  font-size: 48px;
-  margin-bottom: 16px;
-}
-
-.error-message p {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 80px 20px;
-  color: #9ca3af;
-}
-
-.empty-state i {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-
-.empty-state p {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 500;
-}
-
-.results-container {
-  animation: slideUp 0.5s ease-out;
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .results-header {
@@ -424,7 +420,7 @@ const showMovieDetail = (movie) => {
   align-items: center;
   margin-bottom: 24px;
   padding: 20px;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(10px);
   border-radius: 16px;
   border: 1px solid rgba(229, 231, 235, 0.6);
@@ -442,7 +438,6 @@ const showMovieDetail = (movie) => {
 
 .results-title i {
   color: #ec4899;
-  font-size: 24px;
 }
 
 .results-count {
@@ -460,10 +455,9 @@ const showMovieDetail = (movie) => {
   gap: 24px;
 }
 
-/* 动画效果 */
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.5s ease;
+  transition: opacity 0.4s ease;
 }
 
 .fade-enter-from,
@@ -473,23 +467,27 @@ const showMovieDetail = (movie) => {
 
 .movie-list-move,
 .movie-list-enter-active {
-  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.5s ease;
 }
 
 .movie-list-enter-from {
   opacity: 0;
-  transform: translateY(30px) scale(0.9);
+  transform: translateY(20px) scale(0.95);
 }
 
 @media (max-width: 1024px) {
+  .page-header,
   .content-layout {
     grid-template-columns: 1fr;
-    gap: 24px;
+    display: grid;
+  }
+
+  .page-header {
+    gap: 16px;
   }
 
   .sidebar {
-    position: relative;
-    top: 0;
+    position: static;
   }
 }
 
@@ -503,19 +501,10 @@ const showMovieDetail = (movie) => {
     gap: 16px;
   }
 
-  .welcome-state {
-    padding: 60px 20px;
-  }
-
-  .welcome-icon {
-    width: 100px;
-    height: 100px;
-    font-size: 48px;
-  }
-
-  .welcome-state h2 {
-    font-size: 24px;
+  .results-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 }
 </style>
-

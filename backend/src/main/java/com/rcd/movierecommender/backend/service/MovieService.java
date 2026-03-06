@@ -5,14 +5,17 @@ import com.rcd.movierecommender.backend.entity.MovieEntity;
 import com.rcd.movierecommender.backend.exception.BusinessException;
 import com.rcd.movierecommender.backend.exception.ErrorCode;
 import com.rcd.movierecommender.backend.mapper.MovieMapper;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -20,16 +23,10 @@ public class MovieService {
 
     private final MovieMapper movieMapper;
 
-    /**
-     * MovieService 封装了电影查询与 DTO 转换逻辑。
-     */
     public MovieService(MovieMapper movieMapper) {
         this.movieMapper = movieMapper;
     }
 
-    /**
-     * 支持分页的电影搜索：当 keyword 为空时返回全部分页；否则执行名称模糊匹配。
-     */
     public Page<MovieDto> searchMovies(String keyword, int page, int size) {
         if (page < 0 || size <= 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
@@ -42,27 +39,67 @@ public class MovieService {
 
             List<MovieEntity> entities = movieMapper.findMovies(normalizedKeyword, size, offset);
             long total = movieMapper.countMovies(normalizedKeyword);
-            List<MovieDto> dtos = entities.stream()
-                    .map(this::toDto)
-                    .collect(Collectors.toList());
+            List<MovieDto> dtos = entities.stream().map(this::toDto).collect(Collectors.toList());
 
             return new PageImpl<>(dtos, PageRequest.of(page, size), total);
-        } catch (DataAccessException e) {
-            throw new BusinessException(ErrorCode.DATABASE_ERROR,
-                    "查询电影列表失败，数据库访问发生异常", e);
+        } catch (DataAccessException ex) {
+            throw new BusinessException(ErrorCode.DATABASE_ERROR, "查询电影列表失败", ex);
         }
     }
 
-    /**
-     * 按主键查询电影并转换为 DTO。
-     */
     public Optional<MovieDto> getMovie(Long id) {
         try {
             return Optional.ofNullable(movieMapper.findById(id)).map(this::toDto);
-        } catch (DataAccessException e) {
-            throw new BusinessException(ErrorCode.DATABASE_ERROR,
-                    "查询电影详情失败，数据库访问发生异常", e);
+        } catch (DataAccessException ex) {
+            throw new BusinessException(ErrorCode.DATABASE_ERROR, "查询电影详情失败", ex);
         }
+    }
+
+    public List<MovieDto> getRelatedMovies(Long movieId, int size) {
+        if (size <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "size must be positive");
+        }
+        try {
+            MovieEntity currentMovie = movieMapper.findById(movieId);
+            if (currentMovie == null) {
+                return new ArrayList<>();
+            }
+            List<String> genreKeywords = extractGenreKeywords(currentMovie.getGenres());
+            List<MovieEntity> related = movieMapper.findRelatedMovies(movieId, genreKeywords, size);
+            if (related.size() < size) {
+                List<MovieEntity> fallback = movieMapper.findRecentMoviesExcluding(movieId, size * 2);
+                Set<Long> existingIds = related.stream().map(MovieEntity::getId).collect(Collectors.toCollection(LinkedHashSet::new));
+                for (MovieEntity movie : fallback) {
+                    if (existingIds.add(movie.getId())) {
+                        related.add(movie);
+                    }
+                    if (related.size() >= size) {
+                        break;
+                    }
+                }
+            }
+            return related.stream().limit(size).map(this::toDto).collect(Collectors.toList());
+        } catch (DataAccessException ex) {
+            throw new BusinessException(ErrorCode.DATABASE_ERROR, "查询关联电影失败", ex);
+        }
+    }
+
+    private List<String> extractGenreKeywords(String genres) {
+        if (genres == null || genres.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        String[] rawParts = genres.split("[|,/\\s]+");
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String rawPart : rawParts) {
+            String trimmed = rawPart.trim();
+            if (!trimmed.isEmpty()) {
+                normalized.add(trimmed);
+            }
+            if (normalized.size() >= 3) {
+                break;
+            }
+        }
+        return new ArrayList<>(normalized);
     }
 
     private String normalizeKeyword(String keyword) {
@@ -73,16 +110,7 @@ public class MovieService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    /**
-     * 实体转为传输对象，隔离对外暴露字段。
-     * 直接返回数据库中的 posterUrl，不再同步调用 TMDb API 以提升性能。
-     */
     private MovieDto toDto(MovieEntity entity) {
-        return new MovieDto(
-                entity.getId(),
-                entity.getName(),
-                entity.getPublishedYear(),
-                entity.getGenres(),
-                entity.getPosterUrl());
+        return new MovieDto(entity.getId(), entity.getName(), entity.getPublishedYear(), entity.getGenres(), entity.getPosterUrl());
     }
 }

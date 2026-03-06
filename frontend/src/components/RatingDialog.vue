@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div v-if="visible" class="dialog-overlay" @click.self="closeDialog">
     <div class="dialog-container">
       <div class="dialog-header">
@@ -28,14 +28,8 @@
       </div>
 
       <div class="dialog-footer">
-        <button @click="closeDialog" class="btn btn-secondary">
-          取消
-        </button>
-        <button 
-          @click="handleSubmit" 
-          :disabled="currentRating === 0 || loading"
-          class="btn btn-primary"
-        >
+        <button @click="closeDialog" class="btn btn-secondary">取消</button>
+        <button @click="handleSubmit" :disabled="currentRating === 0 || loading" class="btn btn-primary">
           <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-check'"></i>
           <span>{{ loading ? '提交中...' : '提交评分' }}</span>
         </button>
@@ -48,7 +42,7 @@
 
       <div v-if="success" class="success-message">
         <i class="pi pi-check-circle"></i>
-        <span>评分提交成功！</span>
+        <span>评分提交成功</span>
       </div>
     </div>
   </div>
@@ -68,9 +62,9 @@ const props = defineProps({
     type: Object,
     default: null
   },
-  userId: {
+  initialRating: {
     type: Number,
-    required: true
+    default: 0
   }
 });
 
@@ -81,21 +75,33 @@ const loading = ref(false);
 const error = ref('');
 const success = ref(false);
 
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
-    currentRating.value = 0;
-    error.value = '';
-    success.value = false;
+watch(
+  () => props.visible,
+  (newVal) => {
+    if (newVal) {
+      currentRating.value = props.initialRating || 0;
+      error.value = '';
+      success.value = false;
+    }
   }
-});
+);
+
+watch(
+  () => props.initialRating,
+  (newVal) => {
+    if (props.visible) {
+      currentRating.value = newVal || 0;
+    }
+  }
+);
 
 const getRatingText = (rating) => {
   const texts = {
-    1: '很差',
-    2: '较差',
-    3: '一般',
-    4: '不错',
-    5: '非常好'
+    1: '不喜欢',
+    2: '一般',
+    3: '还不错',
+    4: '很喜欢',
+    5: '非常喜欢'
   };
   return texts[rating] || '';
 };
@@ -112,21 +118,21 @@ const handleSubmit = async () => {
   success.value = false;
 
   try {
+    const movieId = props.movie.id || props.movie.movieId;
     await submitRating({
-      userId: props.userId,
-      movieId: props.movie.id || props.movie.movieId,
+      movieId,
       rating: currentRating.value
     });
 
     success.value = true;
     emit('rating-submitted', {
-      movieId: props.movie.id || props.movie.movieId,
+      movieId,
       rating: currentRating.value
     });
 
     setTimeout(() => {
       closeDialog();
-    }, 1500);
+    }, 1000);
   } catch (err) {
     error.value = err.response?.data?.message || err.message || '提交评分失败';
   } finally {
@@ -138,26 +144,13 @@ const handleSubmit = async () => {
 <style scoped>
 .dialog-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  animation: fadeIn 0.2s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 .dialog-container {
@@ -166,19 +159,7 @@ const handleSubmit = async () => {
   width: 90%;
   max-width: 500px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  animation: slideUp 0.3s ease-out;
   overflow: hidden;
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .dialog-header {
@@ -201,7 +182,6 @@ const handleSubmit = async () => {
 
 .dialog-title i {
   color: #fbbf24;
-  font-size: 24px;
 }
 
 .close-btn {
@@ -211,16 +191,6 @@ const handleSubmit = async () => {
   background: #f3f4f6;
   border-radius: 10px;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #6b7280;
-  transition: all 0.2s ease;
-}
-
-.close-btn:hover {
-  background: #e5e7eb;
-  color: #1f2937;
 }
 
 .dialog-body {
@@ -239,24 +209,18 @@ const handleSubmit = async () => {
   color: #1f2937;
 }
 
-.movie-meta {
-  margin: 4px 0;
-  font-size: 14px;
-  color: #6b7280;
-}
-
+.movie-meta,
 .movie-genres {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: #9ca3af;
+  margin: 6px 0 0;
+  color: #6b7280;
 }
 
 .rating-section {
   text-align: center;
   padding: 24px;
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.05), rgba(245, 158, 11, 0.05));
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.06), rgba(245, 158, 11, 0.06));
   border-radius: 16px;
-  border: 2px dashed rgba(251, 191, 36, 0.2);
+  border: 2px dashed rgba(251, 191, 36, 0.22);
 }
 
 .rating-label {
@@ -270,13 +234,13 @@ const handleSubmit = async () => {
   margin: 12px 0 0;
   font-size: 18px;
   font-weight: 700;
-  color: #fbbf24;
+  color: #f59e0b;
 }
 
 .dialog-footer {
   display: flex;
   gap: 12px;
-  padding: 20px 28px 28px;
+  padding: 0 28px 28px;
 }
 
 .btn {
@@ -287,7 +251,6 @@ const handleSubmit = async () => {
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -299,24 +262,9 @@ const handleSubmit = async () => {
   color: #4b5563;
 }
 
-.btn-secondary:hover {
-  background: #e5e7eb;
-}
-
 .btn-primary {
   background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  color: #ffffff;
-  box-shadow: 0 4px 16px rgba(251, 191, 36, 0.3);
-}
-
-.btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(251, 191, 36, 0.4);
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  color: #fff;
 }
 
 .error-message,
@@ -329,43 +277,15 @@ const handleSubmit = async () => {
   gap: 10px;
   font-size: 14px;
   font-weight: 500;
-  animation: slideDown 0.3s ease-out;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .error-message {
   background: #fef2f2;
   color: #dc2626;
-  border: 1px solid #fecaca;
 }
 
 .success-message {
   background: #f0fdf4;
   color: #16a34a;
-  border: 1px solid #bbf7d0;
-}
-
-@media (max-width: 576px) {
-  .dialog-container {
-    width: 95%;
-    margin: 0 16px;
-  }
-
-  .dialog-header,
-  .dialog-body,
-  .dialog-footer {
-    padding-left: 20px;
-    padding-right: 20px;
-  }
 }
 </style>

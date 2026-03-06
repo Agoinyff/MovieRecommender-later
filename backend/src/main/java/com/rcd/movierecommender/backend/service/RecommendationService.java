@@ -10,6 +10,7 @@ import com.rcd.movierecommender.backend.mapper.MovieMapper;
 import com.rcd.movierecommender.backend.mapper.RatingMapper;
 import com.rcd.movierecommender.backend.service.recommender.slopeone.CustomSlopeOneRecommender;
 import org.apache.mahout.cf.taste.common.TasteException;
+import org.apache.mahout.cf.taste.impl.common.FastByIDMap;
 import org.apache.mahout.cf.taste.impl.model.GenericDataModel;
 import org.apache.mahout.cf.taste.impl.model.GenericPreference;
 import org.apache.mahout.cf.taste.impl.model.GenericUserPreferenceArray;
@@ -25,17 +26,23 @@ import org.apache.mahout.cf.taste.recommender.Recommender;
 import org.apache.mahout.cf.taste.recommender.RecommendedItem;
 import org.apache.mahout.cf.taste.similarity.ItemSimilarity;
 import org.apache.mahout.cf.taste.similarity.UserSimilarity;
-import org.apache.mahout.cf.taste.impl.common.FastByIDMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -49,8 +56,8 @@ public class RecommendationService {
     private final CacheManager cacheManager;
 
     /**
-     * 推荐服务核心：围绕用户评分构建三种策略（用户协同、物品协同、Slope One）。
-     * 所有方法均在只读事务下执行，避免误写数据库。
+     * 推荐服务核心。
+     * 负责构建 Mahout 推荐器，并在协同过滤无结果时回退到偏好兜底推荐。
      */
     public RecommendationService(RatingMapper ratingMapper,
             MovieMapper movieMapper,
@@ -62,20 +69,10 @@ public class RecommendationService {
 
     /**
      * 为指定用户生成推荐结果。
-     * 使用缓存机制避免重复计算，相同参数的推荐结果缓存30分钟。
      *
-     * <p>
-     * 流程：
-     * </p>
-     * <ol>
-     * <li>加载用户-电影评分矩阵（从缓存中获取或新建）。</li>
-     * <li>根据策略选择对应的打分算法，得到候选电影的预测得分。</li>
-     * <li>按得分降序截断 size 条，并批量查询电影元数据。</li>
-     * </ol>
-     *
-     * @param userId   目标用户 ID。
-     * @param size     返回条数。
-     * @param strategy 推荐策略（用户、物品、Slope One）。
+     * @param userId 目标用户 ID。
+     * @param size 返回条数。
+     * @param strategy 推荐策略。
      * @return 推荐结果列表。
      */
     @Cacheable(value = "recommendations", key = "#userId + '_' + #size + '_' + #strategy", unless = "#result.isEmpty()")
@@ -83,58 +80,51 @@ public class RecommendationService {
         long startTime = System.currentTimeMillis();
         long startMemory = getUsedMemory();
 
-        log.info("[性能监控] 推荐请求: userId={}, size={}, strategy={}", userId, size, strategy);
+        log.info("[Performance] recommendation request: userId={}, size={}, strategy={}", userId, size, strategy);
 
         try {
-            // 从缓存获取 DataModel（不触发构建）
             DataModel dataModel = getDataModelFromCache();
-
             if (dataModel == null) {
-                log.warn("数据模型尚未准备好，请稍后重试或查看 /api/model/status 获取构建状态");
-                return Collections.emptyList();
+                log.warn("Data model is not ready. Try again later or check /api/model/status.");
+                return fallbackRecommend(userId, size);
             }
 
-            // 打印数据模型统计信息
             try {
-                int numUsers = dataModel.getNumUsers();
-                int numItems = dataModel.getNumItems();
-                log.info("数据模型统计: {} 个用户, {} 个电影", numUsers, numItems);
-            } catch (TasteException e) {
-                log.error("获取数据模型统计失败", e);
+                log.info("Data model stats: users={}, items={}", dataModel.getNumUsers(), dataModel.getNumItems());
+            } catch (TasteException ex) {
+                log.error("Failed to read data model stats", ex);
             }
 
             if (!userExists(userId, dataModel)) {
-                log.warn("用户 {} 不在数据模型中，返回空推荐列表", userId);
-                log.warn("提示：该用户可能没有评分记录，或不在采样数据范围内");
-                return Collections.emptyList();
+                log.warn("User {} is not present in the data model. Use fallback recommendations.", userId);
+                return fallbackRecommend(userId, size);
             }
 
-            log.info("用户 {} 存在于数据模型中，开始生成推荐...", userId);
-
-            List<RecommendedItem> recommendedItems = buildRecommender(dataModel, strategy)
-                    .recommend(userId, size);
-
-            // 批量查询电影信息，避免 N+1 查询问题
+            List<RecommendedItem> recommendedItems = buildRecommender(dataModel, strategy).recommend(userId, size);
             List<RecommendationDto> results = batchToRecommendationDtos(recommendedItems);
+            if (results.isEmpty()) {
+                log.info("Collaborative filtering returned no results. Falling back to preference-based recommendations for user {}.", userId);
+                results = fallbackRecommend(userId, size);
+            }
 
-            // 记录性能指标
             long elapsedTime = System.currentTimeMillis() - startTime;
-            long memoryUsed = (getUsedMemory() - startMemory) / (1024 * 1024); // MB
-
-            log.info("[性能监控] 推荐完成: 耗时={}ms, 内存增量={}MB, 结果数={}",
+            long memoryUsed = (getUsedMemory() - startMemory) / (1024 * 1024);
+            log.info("[Performance] recommendation completed: elapsed={}ms, memoryDelta={}MB, resultCount={}",
                     elapsedTime, memoryUsed, results.size());
-
             return results;
-        } catch (TasteException e) {
+        } catch (TasteException ex) {
             long elapsedTime = System.currentTimeMillis() - startTime;
-            log.error("[性能监控] 推荐失败: 耗时={}ms", elapsedTime, e);
-            throw new BusinessException(ErrorCode.RECOMMENDATION_ENGINE_ERROR,
-                    "Mahout 推荐算法计算失败，无法生成推荐结果，原因：" + e.getMessage(), e, buildRootCause(e));
+            log.error("[Performance] recommendation failed: elapsed={}ms", elapsedTime, ex);
+            throw new BusinessException(
+                    ErrorCode.RECOMMENDATION_ENGINE_ERROR,
+                    "Mahout recommendation failed: " + ex.getMessage(),
+                    ex,
+                    buildRootCause(ex));
         }
     }
 
     /**
-     * 获取当前已使用内存（字节）
+     * 获取当前 JVM 已使用内存。
      */
     private long getUsedMemory() {
         Runtime runtime = Runtime.getRuntime();
@@ -142,44 +132,33 @@ public class RecommendationService {
     }
 
     /**
-     * 从缓存获取数据模型（不触发构建）
-     * 此方法供推荐接口调用，确保不阻塞请求
+     * 从缓存中读取全局数据模型，不主动触发构建。
      */
     private DataModel getDataModelFromCache() {
         Cache cache = cacheManager.getCache("dataModel");
-        if (cache != null) {
-            Cache.ValueWrapper wrapper = cache.get("global");
-            if (wrapper != null) {
-                return (DataModel) wrapper.get();
-            }
+        if (cache == null) {
+            return null;
         }
-        return null;
+        Cache.ValueWrapper wrapper = cache.get("global");
+        return wrapper == null ? null : (DataModel) wrapper.get();
     }
 
     /**
-     * 构建数据模型（仅供 ModelWarmupService 调用）
-     * 采用分页加载避免一次性加载大量数据导致 OOM。
-     * 
-     * 注意：此方法不再使用 @Cacheable 注解，缓存由 ModelWarmupService 手动管理
+     * 构建 Mahout 数据模型。
+     * 采用流式读取评分数据，尽量降低大数据量下的一次性内存压力。
      */
     public DataModel buildDataModel() {
         try {
-            log.info("开始构建数据模型（流式加载）...");
+            log.info("Start building Mahout data model with streaming load...");
             long startTime = System.currentTimeMillis();
 
-            // 用户 -> 评分列表
             FastByIDMap<PreferenceArray> preferenceMap = new FastByIDMap<>();
             Map<Long, List<Preference>> preferences = new HashMap<>();
-
-            // 使用原子计数器记录进度
             java.util.concurrent.atomic.AtomicLong loadedCount = new java.util.concurrent.atomic.AtomicLong(0);
             java.util.concurrent.atomic.AtomicLong lastLogTime = new java.util.concurrent.atomic.AtomicLong(startTime);
 
-            // 流式处理评分数据（只需一次数据库查询）
             ratingMapper.streamAllRatings(resultContext -> {
                 RatingEntity rating = resultContext.getResultObject();
-
-                // 将评分数据添加到对应用户的偏好列表
                 preferences
                         .computeIfAbsent(rating.getUserId(), id -> new ArrayList<>())
                         .add(new GenericPreference(
@@ -188,71 +167,74 @@ public class RecommendationService {
                                 rating.getPreference().floatValue()));
 
                 long count = loadedCount.incrementAndGet();
-
-                // 每10万条记录一次进度（避免日志过多）
                 if (count % 100000 == 0) {
                     long now = System.currentTimeMillis();
                     long elapsed = now - lastLogTime.get();
-                    double speed = 100000.0 / (elapsed / 1000.0); // 条/秒
-                    log.info("已加载 {} 条数据，最近10万条耗时 {}ms，速度: {:.0f} 条/秒",
-                            count, elapsed, speed);
+                    double speed = 100000.0 / (elapsed / 1000.0);
+                    log.info("Loaded {} ratings, last 100000 rows took {}ms, speed={} rows/s",
+                            count, elapsed, Math.round(speed));
                     lastLogTime.set(now);
                 }
             });
 
-            log.info("评分数据加载完成，共 {} 条，涉及 {} 个用户", loadedCount.get(), preferences.size());
+            log.info("Ratings loaded: count={}, users={}", loadedCount.get(), preferences.size());
 
-            // 构建用户偏好数组
-            log.info("开始构建用户偏好数组...");
             for (Map.Entry<Long, List<Preference>> entry : preferences.entrySet()) {
                 preferenceMap.put(entry.getKey(), new GenericUserPreferenceArray(entry.getValue()));
             }
-
-            preferences.clear(); // 释放临时Map内存
+            preferences.clear();
 
             long endTime = System.currentTimeMillis();
-            log.info("数据模型构建完成，耗时: {} 秒", (endTime - startTime) / 1000.0);
-
+            log.info("Data model build completed in {}s", (endTime - startTime) / 1000.0);
             return new GenericDataModel(preferenceMap);
-        } catch (DataAccessException e) {
-            throw new BusinessException(ErrorCode.DATABASE_ERROR,
-                    "加载评分数据失败，无法构建推荐所需的数据模型", e, buildRootCause(e));
-        } catch (OutOfMemoryError e) {
-            log.error("内存溢出！请增加 JVM 堆内存大小（-Xmx 参数）");
-            throw new BusinessException(ErrorCode.DATABASE_ERROR,
-                    "数据量过大导致内存不足，请联系管理员增加服务器内存配置或启用数据采样", e);
-        }
-    }
-
-    private boolean userExists(Long userId, DataModel dataModel) {
-        try {
-            PreferenceArray prefs = dataModel.getPreferencesFromUser(userId);
-            log.debug("用户 {} 有 {} 条评分记录", userId, prefs.length());
-            return true;
-        } catch (TasteException e) {
-            log.debug("用户 {} 不存在: {}", userId, e.getMessage());
-            return false;
-        }
-    }
-
-    private Recommender buildRecommender(DataModel dataModel, RecommendationStrategy strategy) throws TasteException {
-        switch (strategy) {
-            case ITEM_BASED:
-                // 使用 PearsonCorrelation 替代 LogLikelihood，更鲁棒，不易出错
-                ItemSimilarity itemSimilarity = new PearsonCorrelationSimilarity(dataModel);
-                return new GenericItemBasedRecommender(dataModel, itemSimilarity);
-            case SLOPE_ONE:
-                return new CustomSlopeOneRecommender(dataModel);
-            case USER_BASED:
-            default:
-                UserSimilarity userSimilarity = new PearsonCorrelationSimilarity(dataModel);
-                UserNeighborhood neighborhood = new NearestNUserNeighborhood(10, userSimilarity, dataModel);
-                return new GenericUserBasedRecommender(dataModel, neighborhood, userSimilarity);
+        } catch (DataAccessException ex) {
+            throw new BusinessException(
+                    ErrorCode.DATABASE_ERROR,
+                    "Failed to load ratings for data model build",
+                    ex,
+                    buildRootCause(ex));
+        } catch (OutOfMemoryError ex) {
+            log.error("Out of memory while building recommendation data model", ex);
+            throw new BusinessException(
+                    ErrorCode.DATABASE_ERROR,
+                    "Not enough memory to build the recommendation data model",
+                    ex);
         }
     }
 
     /**
-     * 批量转换推荐结果为 DTO（优化：一次性批量查询电影信息）
+     * 判断用户是否已经进入数据模型。
+     */
+    private boolean userExists(Long userId, DataModel dataModel) {
+        try {
+            PreferenceArray prefs = dataModel.getPreferencesFromUser(userId);
+            log.debug("User {} has {} ratings in data model", userId, prefs.length());
+            return true;
+        } catch (TasteException ex) {
+            log.debug("User {} is not present in data model: {}", userId, ex.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 根据策略构建推荐器。
+     * 这里改为 if/else 实现，避免在 Java 8 运行环境下生成额外的 enum switch 辅助类。
+     */
+    private Recommender buildRecommender(DataModel dataModel, RecommendationStrategy strategy) throws TasteException {
+        if (RecommendationStrategy.ITEM_BASED == strategy) {
+            ItemSimilarity itemSimilarity = new PearsonCorrelationSimilarity(dataModel);
+            return new GenericItemBasedRecommender(dataModel, itemSimilarity);
+        }
+        if (RecommendationStrategy.SLOPE_ONE == strategy) {
+            return new CustomSlopeOneRecommender(dataModel);
+        }
+        UserSimilarity userSimilarity = new PearsonCorrelationSimilarity(dataModel);
+        UserNeighborhood neighborhood = new NearestNUserNeighborhood(10, userSimilarity, dataModel);
+        return new GenericUserBasedRecommender(dataModel, neighborhood, userSimilarity);
+    }
+
+    /**
+     * 批量补齐电影元数据，避免推荐结果逐条查询导致的 N+1 问题。
      */
     private List<RecommendationDto> batchToRecommendationDtos(List<RecommendedItem> recommendedItems) {
         if (recommendedItems.isEmpty()) {
@@ -260,19 +242,14 @@ public class RecommendationService {
         }
 
         try {
-            // 收集所有需要查询的电影 ID
             List<Long> movieIds = recommendedItems.stream()
                     .map(RecommendedItem::getItemID)
                     .collect(Collectors.toList());
 
-            // 批量查询电影信息
-            List<MovieEntity> movies = movieIds.isEmpty()
-                    ? Collections.emptyList()
-                    : movieMapper.findByIds(movieIds);
+            List<MovieEntity> movies = movieIds.isEmpty() ? Collections.emptyList() : movieMapper.findByIds(movieIds);
             Map<Long, MovieEntity> movieMap = movies.stream()
-                    .collect(Collectors.toMap(MovieEntity::getId, m -> m));
+                    .collect(Collectors.toMap(MovieEntity::getId, movie -> movie));
 
-            // 构建推荐结果列表
             return recommendedItems.stream()
                     .map(item -> {
                         MovieEntity movie = movieMap.get(item.getItemID());
@@ -289,15 +266,98 @@ public class RecommendationService {
                     })
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
-        } catch (DataAccessException e) {
-            throw new BusinessException(ErrorCode.DATABASE_ERROR,
-                    "批量查询电影基础信息失败，无法返回完整的推荐结果", e, buildRootCause(e));
+        } catch (DataAccessException ex) {
+            throw new BusinessException(
+                    ErrorCode.DATABASE_ERROR,
+                    "Failed to batch load movie metadata for recommendations",
+                    ex,
+                    buildRootCause(ex));
         }
     }
 
     /**
-     * 单个电影信息转换（保留用于其他场景，但推荐接口已改用批量查询）
+     * 协同过滤没有产出结果时的兜底方案。
+     * 优先根据用户高分电影的类型扩展候选集，不足时再补最近电影。
      */
+    private List<RecommendationDto> fallbackRecommend(Long userId, int size) {
+        List<RatingEntity> userRatings = ratingMapper.findByUserId(userId);
+        if (userRatings.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> ratedMovieIds = userRatings.stream()
+                .map(RatingEntity::getMovieId)
+                .distinct()
+                .collect(Collectors.toList());
+
+        List<Long> priorityMovieIds = userRatings.stream()
+                .filter(rating -> rating.getPreference() != null && rating.getPreference() >= 4.0)
+                .map(RatingEntity::getMovieId)
+                .distinct()
+                .collect(Collectors.toList());
+        if (priorityMovieIds.isEmpty()) {
+            priorityMovieIds = ratedMovieIds;
+        }
+
+        List<MovieEntity> ratedMovies = movieMapper.findByIds(priorityMovieIds);
+        List<String> preferredGenres = extractPreferredGenres(ratedMovies);
+
+        List<MovieEntity> candidates = movieMapper.findMoviesByGenresExcludingIds(preferredGenres, ratedMovieIds, size * 2);
+        if (candidates.size() < size) {
+            List<MovieEntity> recentMovies = movieMapper.findRecentMoviesExcludingIds(ratedMovieIds, size * 2);
+            mergeCandidates(candidates, recentMovies, size * 2);
+        }
+
+        return candidates.stream()
+                .limit(size)
+                .map(movie -> new RecommendationDto(
+                        movie.getId(),
+                        movie.getName(),
+                        movie.getPublishedYear(),
+                        movie.getGenres(),
+                        movie.getPosterUrl(),
+                        0.0))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 提取用户高分电影里的偏好类型。
+     */
+    private List<String> extractPreferredGenres(List<MovieEntity> movies) {
+        Set<String> genres = new LinkedHashSet<>();
+        for (MovieEntity movie : movies) {
+            if (movie == null || movie.getGenres() == null) {
+                continue;
+            }
+            String[] parts = movie.getGenres().split("[|,/\\s]+");
+            for (String part : parts) {
+                String genre = part.trim();
+                if (!genre.isEmpty()) {
+                    genres.add(genre);
+                }
+                if (genres.size() >= 6) {
+                    return new ArrayList<>(genres);
+                }
+            }
+        }
+        return new ArrayList<>(genres);
+    }
+
+    /**
+     * 合并候选电影并去重。
+     */
+    private void mergeCandidates(List<MovieEntity> base, List<MovieEntity> extra, int limit) {
+        Set<Long> existingIds = base.stream().map(MovieEntity::getId).collect(Collectors.toCollection(LinkedHashSet::new));
+        for (MovieEntity movie : extra) {
+            if (existingIds.add(movie.getId())) {
+                base.add(movie);
+            }
+            if (base.size() >= limit) {
+                break;
+            }
+        }
+    }
+
     @Deprecated
     private RecommendationDto toRecommendationDto(Long movieId, double score) {
         try {
@@ -305,11 +365,19 @@ public class RecommendationService {
             if (movie == null) {
                 return null;
             }
-            return new RecommendationDto(movie.getId(), movie.getName(), movie.getPublishedYear(), movie.getGenres(),
-                    movie.getPosterUrl(), score);
-        } catch (DataAccessException e) {
-            throw new BusinessException(ErrorCode.DATABASE_ERROR,
-                    "查询电影基础信息失败，无法返回完整的推荐结果", e, buildRootCause(e));
+            return new RecommendationDto(
+                    movie.getId(),
+                    movie.getName(),
+                    movie.getPublishedYear(),
+                    movie.getGenres(),
+                    movie.getPosterUrl(),
+                    score);
+        } catch (DataAccessException ex) {
+            throw new BusinessException(
+                    ErrorCode.DATABASE_ERROR,
+                    "Failed to load movie metadata",
+                    ex,
+                    buildRootCause(ex));
         }
     }
 

@@ -1,7 +1,10 @@
-/**
- * Axios 实例配置和拦截器
+﻿/**
+ * Axios instance and interceptors
  */
 import axios from 'axios';
+
+const TOKEN_KEY = 'movie-recommender-token';
+const USER_KEY = 'movie-recommender-user';
 
 const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8080/api',
@@ -11,27 +14,29 @@ const http = axios.create({
   }
 });
 
-// 请求拦截器
 http.interceptors.request.use(
   (config) => {
-    // 可以在这里添加 token 等认证信息
-    // const token = localStorage.getItem('token');
-    // if (token) {
-    //   config.headers.Authorization = `Bearer ${token}`;
-    // }
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// 响应拦截器
 http.interceptors.response.use(
-  (response) => {
-    return response.data;
-  },
+  (response) => response.data,
   (error) => {
+    const status = error.response?.status;
+    if (status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      if (!window.location.pathname.startsWith('/auth')) {
+        const redirect = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `/auth?redirect=${redirect}`;
+      }
+    }
     const message = error.response?.data?.message || error.message || '请求失败';
     console.error('API Error:', message);
     return Promise.reject(error);
@@ -39,4 +44,3 @@ http.interceptors.response.use(
 );
 
 export default http;
-

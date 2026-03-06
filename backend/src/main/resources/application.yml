@@ -7,11 +7,14 @@ spring:
   jackson:
     serialization:
       WRITE_DATES_AS_TIMESTAMPS: false
+  sql:
+    init:
+      mode: always
 
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
-    default-statement-timeout: 30  # 默认查询超时30秒
+    default-statement-timeout: 30
 
 server:
   port: 8080
@@ -22,14 +25,21 @@ logging:
     com.rcd.movierecommender.backend: DEBUG
     org.springframework.cache: DEBUG
 
-# 数据模型构建配置
 model:
   build:
-    cron: "0 0 * * * ?"      # 每小时执行一次
-    timeout: 300000           # 构建超时时间（5分钟）
-    startup-delay: 5000      # 启动后延迟30秒开始预热
+    cron: "0 0 * * * ?"
+    timeout: 300000
+    startup-delay: 5000
 
-# TMDb API 配置
+auth:
+  jwt:
+    secret: 6TR7ylRCs7uk9o6Ifa3Ev0gz8vDg5SkXXjYVzI7uS7g=
+    expiration-millis: 604800000
+  bootstrap-admin:
+    username: admin
+    password: admin123
+    display-name: 系统管理员
+
 tmdb:
   api:
     key: 764d5a982fef573bdd8da60b1a23224e

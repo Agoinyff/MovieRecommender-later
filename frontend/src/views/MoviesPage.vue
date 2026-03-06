@@ -1,10 +1,10 @@
-<template>
+﻿<template>
   <div class="movies-page">
     <div class="page-container">
       <header class="page-header">
         <div>
           <h1 class="page-title">电影库</h1>
-          <p class="page-description">浏览和搜索海量电影资源</p>
+          <p class="page-description">浏览、搜索并打开电影详情页完成评分。</p>
         </div>
         <div v-if="totalElements > 0" class="stats-badge">
           <i class="pi pi-database"></i>
@@ -49,7 +49,7 @@
           <TransitionGroup name="movie-list">
             <MovieCard
               v-for="movie in movies"
-              :key="movie.movieId"
+              :key="movie.id || movie.movieId"
               :movie="movie"
               @click="showMovieDetail"
             />
@@ -77,12 +77,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
-import { useMovieStore } from '@/store/movie';
+import { computed, onMounted, ref } from 'vue';
+import Paginator from 'primevue/paginator';
 import MovieCard from '@/components/MovieCard.vue';
 import MovieDetailDialog from '@/components/MovieDetailDialog.vue';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
-import Paginator from 'primevue/paginator';
+import { useMovieStore } from '@/store/movie';
 
 const movieStore = useMovieStore();
 const searchKeyword = ref('');
@@ -229,15 +229,6 @@ onMounted(() => {
   border-radius: 8px;
   color: #6b7280;
   cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.clear-btn:hover {
-  background: rgba(156, 163, 175, 0.2);
-  color: #374151;
 }
 
 .search-btn {
@@ -253,18 +244,7 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.3s ease;
   box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
-}
-
-.search-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
-}
-
-.search-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .movies-grid {
@@ -280,41 +260,20 @@ onMounted(() => {
   margin-top: 40px;
 }
 
-.error-message {
+.error-message,
+.empty-state {
   text-align: center;
   padding: 60px 20px;
+}
+
+.error-message {
   color: #dc2626;
 }
 
-.error-message i {
-  font-size: 48px;
-  margin-bottom: 16px;
-}
-
-.error-message p {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 500;
-}
-
 .empty-state {
-  text-align: center;
-  padding: 80px 20px;
   color: #9ca3af;
 }
 
-.empty-state i {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-
-.empty-state p {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 500;
-}
-
-/* 动画效果 */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease;
@@ -327,16 +286,12 @@ onMounted(() => {
 
 .movie-list-move,
 .movie-list-enter-active {
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.5s ease;
 }
 
 .movie-list-enter-from {
   opacity: 0;
   transform: translateY(20px);
-}
-
-.movie-list-leave-active {
-  position: absolute;
 }
 
 @media (max-width: 768px) {
@@ -363,4 +318,3 @@ onMounted(() => {
   }
 }
 </style>
-

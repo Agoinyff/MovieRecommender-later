@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div id="app">
     <AppNavbar />
     <router-view v-slot="{ Component }">
@@ -10,7 +10,19 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue';
 import AppNavbar from './components/AppNavbar.vue';
+import { useAuthStore } from '@/store/auth';
+
+const authStore = useAuthStore();
+
+onMounted(() => {
+  if (authStore.token && authStore.user) {
+    authStore.fetchCurrentUser().catch(() => {
+      authStore.logout();
+    });
+  }
+});
 </script>
 
 <style>
@@ -18,7 +30,6 @@ import AppNavbar from './components/AppNavbar.vue';
   min-height: 100vh;
 }
 
-/* 页面切换动画 */
 .page-enter-active,
 .page-leave-active {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

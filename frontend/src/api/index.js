@@ -1,6 +1,7 @@
-/**
- * API 统一导出
+﻿/**
+ * API exports
  */
+export * from './auth';
 export * from './movie';
 export * from './recommendation';
 export * from './rating';

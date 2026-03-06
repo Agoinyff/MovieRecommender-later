@@ -1,11 +1,8 @@
-<template>
+﻿<template>
   <div v-if="visible" class="dialog-overlay" @click.self="closeDialog">
     <div class="dialog-container">
       <div class="dialog-header">
-        <h3 class="dialog-title">
-          <i class="pi pi-star"></i>
-          <span>为电影评分</span>
-        </h3>
+        <h3 class="dialog-title">为电影评分</h3>
         <button @click="closeDialog" class="close-btn">
           <i class="pi pi-times"></i>
         </button>
@@ -20,36 +17,20 @@
 
         <div class="rating-section">
           <p class="rating-label">你的评分</p>
-          <RatingStars v-model="currentRating" :size="48" />
-          <p v-if="currentRating > 0" class="rating-text">
-            {{ getRatingText(currentRating) }}
-          </p>
+          <RatingStars v-model="currentRating" :size="40" />
+          <p v-if="currentRating > 0" class="rating-text">{{ getRatingText(currentRating) }}</p>
         </div>
       </div>
 
       <div class="dialog-footer">
-        <button @click="closeDialog" class="btn btn-secondary">
-          取消
-        </button>
-        <button 
-          @click="handleSubmit" 
-          :disabled="currentRating === 0 || loading"
-          class="btn btn-primary"
-        >
-          <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-check'"></i>
-          <span>{{ loading ? '提交中...' : '提交评分' }}</span>
+        <button @click="closeDialog" class="btn btn-secondary">取消</button>
+        <button @click="handleSubmit" :disabled="currentRating === 0 || loading" class="btn btn-primary">
+          {{ loading ? '提交中...' : '提交评分' }}
         </button>
       </div>
 
-      <div v-if="error" class="error-message">
-        <i class="pi pi-exclamation-circle"></i>
-        <span>{{ error }}</span>
-      </div>
-
-      <div v-if="success" class="success-message">
-        <i class="pi pi-check-circle"></i>
-        <span>评分提交成功！</span>
-      </div>
+      <p v-if="error" class="message error">{{ error }}</p>
+      <p v-if="success" class="message success">评分已更新</p>
     </div>
   </div>
 </template>
@@ -68,9 +49,9 @@ const props = defineProps({
     type: Object,
     default: null
   },
-  userId: {
+  initialRating: {
     type: Number,
-    required: true
+    default: 0
   }
 });
 
@@ -81,52 +62,47 @@ const loading = ref(false);
 const error = ref('');
 const success = ref(false);
 
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
-    currentRating.value = 0;
-    error.value = '';
-    success.value = false;
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible) {
+      currentRating.value = props.initialRating || props.movie?.userRating || 0;
+      error.value = '';
+      success.value = false;
+    }
   }
-});
+);
 
 const getRatingText = (rating) => {
   const texts = {
-    1: '很差',
-    2: '较差',
-    3: '一般',
-    4: '不错',
-    5: '非常好'
+    1: '不喜欢',
+    2: '一般',
+    3: '还不错',
+    4: '很喜欢',
+    5: '强烈推荐'
   };
   return texts[rating] || '';
 };
 
-const closeDialog = () => {
-  emit('update:visible', false);
-};
+const closeDialog = () => emit('update:visible', false);
 
 const handleSubmit = async () => {
-  if (!props.movie || currentRating.value === 0) return;
-
+  if (!props.movie) {
+    return;
+  }
   loading.value = true;
   error.value = '';
-  success.value = false;
-
   try {
     await submitRating({
-      userId: props.userId,
       movieId: props.movie.id || props.movie.movieId,
       rating: currentRating.value
     });
-
     success.value = true;
     emit('rating-submitted', {
       movieId: props.movie.id || props.movie.movieId,
       rating: currentRating.value
     });
-
-    setTimeout(() => {
-      closeDialog();
-    }, 1500);
+    setTimeout(closeDialog, 800);
   } catch (err) {
     error.value = err.response?.data?.message || err.message || '提交评分失败';
   } finally {
@@ -138,234 +114,98 @@ const handleSubmit = async () => {
 <style scoped>
 .dialog-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
-  animation: fadeIn 0.2s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  z-index: 1200;
 }
 
 .dialog-container {
-  background: #ffffff;
+  width: min(92vw, 460px);
+  background: #fff;
   border-radius: 24px;
-  width: 90%;
-  max-width: 500px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  animation: slideUp 0.3s ease-out;
-  overflow: hidden;
+  padding: 24px;
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.dialog-header {
+.dialog-header,
+.dialog-footer {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  padding: 24px 28px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.dialog-title {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
-  color: #1f2937;
-  display: flex;
-  align-items: center;
   gap: 12px;
-}
-
-.dialog-title i {
-  color: #fbbf24;
-  font-size: 24px;
-}
-
-.close-btn {
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: #f3f4f6;
-  border-radius: 10px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #6b7280;
-  transition: all 0.2s ease;
-}
-
-.close-btn:hover {
-  background: #e5e7eb;
-  color: #1f2937;
 }
 
 .dialog-body {
-  padding: 32px 28px;
+  padding: 20px 0;
+}
+
+.close-btn {
+  border: none;
+  background: #f1f5f9;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
 }
 
 .movie-info {
-  margin-bottom: 32px;
   text-align: center;
+  margin-bottom: 20px;
 }
 
 .movie-name {
-  margin: 0 0 8px;
-  font-size: 20px;
-  font-weight: 700;
-  color: #1f2937;
+  margin: 0 0 6px;
+  font-size: 22px;
 }
 
-.movie-meta {
-  margin: 4px 0;
-  font-size: 14px;
-  color: #6b7280;
-}
-
-.movie-genres {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: #9ca3af;
+.movie-meta,
+.movie-genres,
+.rating-label,
+.rating-text {
+  margin: 0;
+  color: #64748b;
 }
 
 .rating-section {
-  text-align: center;
-  padding: 24px;
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.05), rgba(245, 158, 11, 0.05));
-  border-radius: 16px;
-  border: 2px dashed rgba(251, 191, 36, 0.2);
-}
-
-.rating-label {
-  margin: 0 0 16px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #4b5563;
-}
-
-.rating-text {
-  margin: 12px 0 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: #fbbf24;
-}
-
-.dialog-footer {
-  display: flex;
+  display: grid;
+  justify-items: center;
   gap: 12px;
-  padding: 20px 28px 28px;
+  padding: 24px;
+  border-radius: 18px;
+  background: #fff7ed;
 }
 
 .btn {
   flex: 1;
-  height: 48px;
+  height: 46px;
+  border-radius: 14px;
   border: none;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
 }
 
 .btn-secondary {
-  background: #f3f4f6;
-  color: #4b5563;
-}
-
-.btn-secondary:hover {
-  background: #e5e7eb;
+  background: #e2e8f0;
+  color: #334155;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  color: #ffffff;
-  box-shadow: 0 4px 16px rgba(251, 191, 36, 0.3);
+  background: linear-gradient(135deg, #ea580c, #f59e0b);
+  color: #fff;
 }
 
-.btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(251, 191, 36, 0.4);
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.error-message,
-.success-message {
-  margin: 0 28px 20px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.message {
+  margin: 16px 0 0;
+  text-align: center;
   font-size: 14px;
-  font-weight: 500;
-  animation: slideDown 0.3s ease-out;
 }
 
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.error-message {
-  background: #fef2f2;
+.error {
   color: #dc2626;
-  border: 1px solid #fecaca;
 }
 
-.success-message {
-  background: #f0fdf4;
+.success {
   color: #16a34a;
-  border: 1px solid #bbf7d0;
-}
-
-@media (max-width: 576px) {
-  .dialog-container {
-    width: 95%;
-    margin: 0 16px;
-  }
-
-  .dialog-header,
-  .dialog-body,
-  .dialog-footer {
-    padding-left: 20px;
-    padding-right: 20px;
-  }
 }
 </style>

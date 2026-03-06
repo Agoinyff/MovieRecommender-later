@@ -17,9 +17,6 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ----------------------------
--- Table structure for movie_links
--- ----------------------------
 DROP TABLE IF EXISTS `movie_links`;
 CREATE TABLE `movie_links`  (
   `movieID` int NOT NULL,
@@ -31,9 +28,6 @@ CREATE TABLE `movie_links`  (
   CONSTRAINT `fk_links_movie` FOREIGN KEY (`movieID`) REFERENCES `movies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
 
--- ----------------------------
--- Table structure for movie_preferences
--- ----------------------------
 DROP TABLE IF EXISTS `movie_preferences`;
 CREATE TABLE `movie_preferences`  (
   `userID` int NOT NULL,
@@ -46,9 +40,6 @@ CREATE TABLE `movie_preferences`  (
   CONSTRAINT `movie_preferences_ibfk_1` FOREIGN KEY (`movieID`) REFERENCES `movies` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
 ) ENGINE = InnoDB CHARACTER SET = latin1 COLLATE = latin1_swedish_ci ROW_FORMAT = Dynamic;
 
--- ----------------------------
--- Table structure for movie_tags
--- ----------------------------
 DROP TABLE IF EXISTS `movie_tags`;
 CREATE TABLE `movie_tags`  (
   `id` bigint NOT NULL AUTO_INCREMENT,
@@ -64,9 +55,6 @@ CREATE TABLE `movie_tags`  (
   CONSTRAINT `fk_tags_movie` FOREIGN KEY (`movieID`) REFERENCES `movies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE = InnoDB AUTO_INCREMENT = 95581 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
 
--- ----------------------------
--- Table structure for movies
--- ----------------------------
 DROP TABLE IF EXISTS `movies`;
 CREATE TABLE `movies`  (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -76,5 +64,18 @@ CREATE TABLE `movies`  (
   `poster_url` varchar(500) CHARACTER SET latin1 COLLATE latin1_swedish_ci NULL DEFAULT NULL COMMENT '电影海报URL',
   PRIMARY KEY (`id`) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 3953 CHARACTER SET = latin1 COLLATE = latin1_swedish_ci ROW_FORMAT = Dynamic;
+
+DROP TABLE IF EXISTS `app_users`;
+CREATE TABLE `app_users`  (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL,
+  `password_hash` varchar(255) NOT NULL,
+  `role` varchar(20) NOT NULL DEFAULT 'USER',
+  `status` varchar(20) NOT NULL DEFAULT 'ACTIVE',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_login_at` datetime NULL DEFAULT NULL,
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE INDEX `uk_app_users_username`(`username` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
 
 SET FOREIGN_KEY_CHECKS = 1;

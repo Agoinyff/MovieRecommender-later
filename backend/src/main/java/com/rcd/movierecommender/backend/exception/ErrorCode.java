@@ -4,7 +4,11 @@ public enum ErrorCode {
     BAD_REQUEST(40000, "请求参数错误"),
     VALIDATION_ERROR(40001, "请求参数校验失败"),
     MISSING_PARAMETER(40002, "缺少必填参数"),
+    UNAUTHORIZED(40100, "未登录或登录已过期"),
+    FORBIDDEN(40300, "没有权限执行该操作"),
+    NOT_FOUND(40400, "资源不存在"),
     METHOD_NOT_ALLOWED(40500, "请求方法不被支持"),
+    CONFLICT(40900, "资源冲突"),
     DATABASE_ERROR(50010, "数据库访问异常"),
     RECOMMENDATION_ENGINE_ERROR(50020, "推荐算法执行失败"),
     INTERNAL_ERROR(50000, "服务器内部错误");

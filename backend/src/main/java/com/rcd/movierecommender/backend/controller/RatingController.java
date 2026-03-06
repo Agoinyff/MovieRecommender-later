@@ -1,57 +1,67 @@
 package com.rcd.movierecommender.backend.controller;
 
+import com.rcd.movierecommender.backend.auth.AuthContextHolder;
+import com.rcd.movierecommender.backend.auth.RequireLogin;
+import com.rcd.movierecommender.backend.dto.PagedRatingResponse;
 import com.rcd.movierecommender.backend.dto.RatingDto;
 import com.rcd.movierecommender.backend.dto.RatingRequest;
+import com.rcd.movierecommender.backend.dto.RatingStatsDto;
 import com.rcd.movierecommender.backend.service.RatingService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import javax.validation.Valid;
-import java.util.List;
 
-/**
- * 评分管理接口
- * 
- * 提供用户评分的提交和查询功能
- */
 @RestController
 @RequestMapping("/api/ratings")
 @Validated
-@Tag(name = "Rating", description = "用户评分管理接口")
+@Tag(name = "Rating", description = "用户评分接口")
+@RequireLogin
 public class RatingController {
 
-    @Autowired
-    private RatingService ratingService;
+    private final RatingService ratingService;
 
-    /**
-     * 提交用户评分
-     * 
-     * @param request 评分请求
-     * @return 成功响应
-     */
+    public RatingController(RatingService ratingService) {
+        this.ratingService = ratingService;
+    }
+
     @PostMapping
-    @Operation(summary = "提交评分", description = "用户对电影进行评分，评分范围为 1-5")
-    public ResponseEntity<String> submitRating(
-            @Parameter(description = "评分请求，包含 userId、movieId 和 rating") @Valid @RequestBody RatingRequest request) {
-        ratingService.saveRating(request.getUserId(), request.getMovieId(), request.getRating());
+    @Operation(summary = "提交评分")
+    public ResponseEntity<String> submitRating(@Valid @RequestBody RatingRequest request) {
+        ratingService.saveRating(AuthContextHolder.getUserId(), request.getMovieId(), request.getRating());
         return ResponseEntity.ok("评分提交成功");
     }
 
-    /**
-     * 查询用户的所有评分
-     * 
-     * @param userId 用户 ID
-     * @return 评分列表
-     */
-    @GetMapping("/user/{userId}")
-    @Operation(summary = "查询用户评分", description = "获取指定用户的所有评分记录")
-    public List<RatingDto> getUserRatings(
-            @Parameter(description = "用户 ID") @PathVariable Long userId) {
-        return ratingService.getUserRatings(userId);
+    @GetMapping("/me")
+    @Operation(summary = "我的评分列表")
+    public PagedRatingResponse getMyRatings(
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size,
+            @RequestParam(value = "query", required = false) String query,
+            @RequestParam(value = "minRating", required = false) Double minRating,
+            @RequestParam(value = "maxRating", required = false) Double maxRating) {
+        return ratingService.getPagedRatings(AuthContextHolder.getUserId(), query, minRating, maxRating, page, size);
+    }
+
+    @GetMapping("/me/stats")
+    @Operation(summary = "我的评分统计")
+    public RatingStatsDto getMyRatingStats() {
+        return ratingService.getRatingStats(AuthContextHolder.getUserId());
+    }
+
+    @GetMapping("/me/movies/{movieId}")
+    @Operation(summary = "我对某部电影的评分")
+    public ResponseEntity<RatingDto> getMyMovieRating(@PathVariable Long movieId) {
+        RatingDto rating = ratingService.getUserRating(AuthContextHolder.getUserId(), movieId);
+        return rating == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(rating);
     }
 }

@@ -2,10 +2,10 @@ package com.rcd.movierecommender.backend.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.dao.DataAccessException;
 import org.springframework.validation.BindException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -15,8 +15,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.ConstraintViolationException;
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -70,11 +70,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(response);
     }
 
-    @ExceptionHandler({ IllegalArgumentException.class })
+    @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiErrorResponse> handleIllegalArgument(IllegalArgumentException ex,
             HttpServletRequest request) {
-        log.error("IllegalArgumentException: {}, Request: {}", ex.getMessage(), request.getRequestURI(), ex);
-        List<String> details = new ArrayList<>();
+        log.error("IllegalArgumentException: {} Request: {}", ex.getMessage(), request.getRequestURI(), ex);
+        List<String> details = new ArrayList<String>();
         details.add(ex.getMessage());
         if (ex.getCause() != null) {
             details.add("Cause: " + ex.getCause().getMessage());
@@ -96,7 +96,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleDataAccess(DataAccessException ex, HttpServletRequest request) {
         log.error("Database access exception", ex);
         ApiErrorResponse response = ApiErrorResponse.of(ErrorCode.DATABASE_ERROR,
-                "数据库访问异常，无法读取或写入推荐/电影数据，请稍后重试", request.getRequestURI(), buildRootCause(ex));
+                "数据库访问异常，请稍后重试", request.getRequestURI(), buildRootCause(ex));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
 
@@ -104,7 +104,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleTasteException(org.apache.mahout.cf.taste.common.TasteException ex,
             HttpServletRequest request) {
         ApiErrorResponse response = ApiErrorResponse.of(ErrorCode.RECOMMENDATION_ENGINE_ERROR,
-                "推荐算法执行失败：" + ex.getMessage(), request.getRequestURI(), buildRootCause(ex));
+                "推荐算法执行失败: " + ex.getMessage(), request.getRequestURI(), buildRootCause(ex));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
@@ -117,7 +117,7 @@ public class GlobalExceptionHandler {
     }
 
     private List<String> buildRootCause(Throwable ex) {
-        List<String> details = new ArrayList<>();
+        List<String> details = new ArrayList<String>();
         Throwable cause = ex.getCause();
         while (cause != null) {
             details.add(cause.getMessage());
@@ -132,7 +132,19 @@ public class GlobalExceptionHandler {
         if (badRequestCodes.contains(errorCode)) {
             return HttpStatus.BAD_REQUEST;
         }
-        if (ErrorCode.METHOD_NOT_ALLOWED == errorCode) {
+        if (errorCode == ErrorCode.UNAUTHORIZED) {
+            return HttpStatus.UNAUTHORIZED;
+        }
+        if (errorCode == ErrorCode.FORBIDDEN) {
+            return HttpStatus.FORBIDDEN;
+        }
+        if (errorCode == ErrorCode.NOT_FOUND) {
+            return HttpStatus.NOT_FOUND;
+        }
+        if (errorCode == ErrorCode.CONFLICT) {
+            return HttpStatus.CONFLICT;
+        }
+        if (errorCode == ErrorCode.METHOD_NOT_ALLOWED) {
             return HttpStatus.METHOD_NOT_ALLOWED;
         }
         return HttpStatus.INTERNAL_SERVER_ERROR;

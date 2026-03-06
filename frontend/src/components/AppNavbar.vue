@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <nav class="navbar">
     <div class="navbar-container">
       <router-link to="/" class="logo">
@@ -7,67 +7,41 @@
       </router-link>
 
       <div class="nav-links">
-        <router-link to="/" class="nav-link">
-          <i class="pi pi-home"></i>
-          <span>首页</span>
-        </router-link>
-        <router-link to="/movies" class="nav-link">
-          <i class="pi pi-list"></i>
-          <span>电影库</span>
-        </router-link>
-        <router-link to="/recommendations" class="nav-link">
-          <i class="pi pi-star"></i>
-          <span>个性化推荐</span>
-        </router-link>
-        <router-link to="/profile" class="nav-link">
-          <i class="pi pi-user"></i>
-          <span>我的评分</span>
-        </router-link>
-        <router-link to="/metrics" class="nav-link">
-          <i class="pi pi-chart-line"></i>
-          <span>系统监控</span>
-        </router-link>
-        <router-link to="/about" class="nav-link">
-          <i class="pi pi-info-circle"></i>
-          <span>关于</span>
-        </router-link>
+        <router-link to="/" class="nav-link">首页</router-link>
+        <router-link to="/movies" class="nav-link">电影库</router-link>
+        <router-link v-if="authStore.isAuthenticated" to="/recommendations" class="nav-link">个性化推荐</router-link>
+        <router-link v-if="authStore.isAuthenticated" to="/profile" class="nav-link">个人中心</router-link>
+        <router-link v-if="authStore.isAdmin" to="/admin" class="nav-link">后台</router-link>
       </div>
 
-      <div class="nav-status">
-        <HealthStatusBadge :status="healthStatus" />
+      <div class="nav-actions">
+        <template v-if="authStore.isAuthenticated">
+          <div class="user-chip">
+            <span class="name">{{ authStore.user?.username }}</span>
+            <span class="role">{{ authStore.user?.role === 'ADMIN' ? '管理员' : '普通用户' }}</span>
+          </div>
+          <button class="logout-btn" @click="handleLogout">退出</button>
+        </template>
+        <template v-else>
+          <router-link to="/login" class="text-link">登录</router-link>
+          <router-link to="/register" class="primary-link">注册</router-link>
+        </template>
       </div>
     </div>
   </nav>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
-import { getSystemStatus } from '@/api';
-import HealthStatusBadge from './HealthStatusBadge.vue';
+import { useRouter } from 'vue-router';
+import { useAuthStore } from '@/store/auth';
 
-const healthStatus = ref('unknown');
-let healthCheckInterval = null;
+const router = useRouter();
+const authStore = useAuthStore();
 
-const checkHealth = async () => {
-  try {
-    const status = await getSystemStatus();
-    healthStatus.value = status.status === 'ok' ? 'online' : 'error';
-  } catch (err) {
-    healthStatus.value = 'offline';
-  }
+const handleLogout = async () => {
+  await authStore.logout();
+  router.push('/login');
 };
-
-onMounted(() => {
-  checkHealth();
-  // Check health every 30 seconds
-  healthCheckInterval = setInterval(checkHealth, 30000);
-});
-
-onUnmounted(() => {
-  if (healthCheckInterval) {
-    clearInterval(healthCheckInterval);
-  }
-});
 </script>
 
 <style scoped>
@@ -75,21 +49,18 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 .navbar-container {
-  max-width: 1400px;
+  max-width: 1320px;
   margin: 0 auto;
+  height: 68px;
   padding: 0 24px;
-  height: 64px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 24px;
 }
 
@@ -97,97 +68,93 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  text-decoration: none;
+  color: #0f172a;
   font-size: 20px;
   font-weight: 800;
-  color: #1f2937;
-  text-decoration: none;
-  transition: transform 0.2s ease;
   white-space: nowrap;
 }
 
 .logo i {
-  font-size: 24px;
-  color: #6366f1;
-}
-
-.logo:hover {
-  transform: scale(1.02);
+  color: #ea580c;
 }
 
 .nav-links {
-  display: flex;
-  gap: 6px;
   flex: 1;
+  display: flex;
   justify-content: center;
+  gap: 10px;
+}
+
+.nav-link,
+.text-link,
+.primary-link,
+.logout-btn {
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
 }
 
 .nav-link {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  border-radius: 12px;
-  color: #4b5563;
-  text-decoration: none;
-  font-weight: 600;
-  font-size: 14px;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.nav-link i {
-  font-size: 16px;
-}
-
-.nav-link:hover {
-  background: rgba(99, 102, 241, 0.1);
-  color: #4f46e5;
+  color: #475569;
 }
 
 .nav-link.router-link-active {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  background: #fff7ed;
+  color: #c2410c;
 }
 
-.nav-status {
+.nav-actions {
   display: flex;
   align-items: center;
+  gap: 12px;
 }
 
-@media (max-width: 1024px) {
-  .nav-link {
-    padding: 10px 12px;
-    font-size: 13px;
-  }
+.user-chip {
+  display: grid;
+  padding: 8px 14px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
 }
 
-@media (max-width: 768px) {
+.name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.role {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.text-link {
+  color: #475569;
+}
+
+.primary-link,
+.logout-btn {
+  background: linear-gradient(135deg, #ea580c, #f59e0b);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
   .navbar-container {
-    padding: 0 16px;
-  }
-
-  .logo span {
-    display: none;
+    height: auto;
+    padding: 12px 16px;
+    flex-wrap: wrap;
   }
 
   .nav-links {
-    gap: 2px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-  
-  .nav-link span {
-    display: none;
-  }
-  
-  .nav-link {
-    padding: 10px;
-  }
-
-  .nav-status {
-    display: none;
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
   }
 }
 </style>
-

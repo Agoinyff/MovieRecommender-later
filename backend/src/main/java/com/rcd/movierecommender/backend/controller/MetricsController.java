@@ -1,9 +1,10 @@
 package com.rcd.movierecommender.backend.controller;
 
 import com.github.benmanes.caffeine.cache.stats.CacheStats;
+import com.rcd.movierecommender.backend.auth.RequireRole;
+import com.rcd.movierecommender.backend.dto.UserRole;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.caffeine.CaffeineCache;
@@ -15,38 +16,29 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * 性能指标监控接口
- * 
- * 提供缓存统计、内存使用等性能监控数据查询
- */
 @RestController
 @RequestMapping("/api/metrics")
+@RequireRole(UserRole.ADMIN)
 @Tag(name = "Metrics", description = "性能指标监控接口")
 public class MetricsController {
 
-    @Autowired
-    private CacheManager cacheManager;
+    private final CacheManager cacheManager;
 
-    /**
-     * 获取缓存统计信息
-     * 
-     * @return 各缓存区域的命中率、大小等统计数据
-     */
+    public MetricsController(CacheManager cacheManager) {
+        this.cacheManager = cacheManager;
+    }
+
     @GetMapping("/cache")
-    @Operation(summary = "获取缓存统计", description = "返回所有缓存区域的命中率、命中次数、未命中次数、当前大小等统计信息")
+    @Operation(summary = "获取缓存统计")
     public Map<String, Object> getCacheStats() {
-        Map<String, Object> stats = new HashMap<>();
-
+        Map<String, Object> stats = new HashMap<String, Object>();
         for (String cacheName : Arrays.asList("dataModel", "recommendations", "movies")) {
             Cache cache = cacheManager.getCache(cacheName);
             if (cache instanceof CaffeineCache) {
                 CaffeineCache caffeineCache = (CaffeineCache) cache;
                 com.github.benmanes.caffeine.cache.Cache<Object, Object> nativeCache = caffeineCache.getNativeCache();
                 CacheStats cacheStats = nativeCache.stats();
-
-                Map<String, Object> cacheInfo = new HashMap<>();
-                // 返回纯数字格式（0-1之间的小数），前端会格式化显示
+                Map<String, Object> cacheInfo = new HashMap<String, Object>();
                 cacheInfo.put("hitRate", cacheStats.hitRate());
                 cacheInfo.put("hitCount", cacheStats.hitCount());
                 cacheInfo.put("missCount", cacheStats.missCount());
@@ -54,24 +46,17 @@ public class MetricsController {
                 cacheInfo.put("loadFailureCount", cacheStats.loadFailureCount());
                 cacheInfo.put("evictionCount", cacheStats.evictionCount());
                 cacheInfo.put("size", nativeCache.estimatedSize());
-
                 stats.put(cacheName, cacheInfo);
             }
         }
-
         return stats;
     }
 
-    /**
-     * 获取内存使用统计
-     * 
-     * @return JVM 内存使用情况（MB）
-     */
     @GetMapping("/memory")
-    @Operation(summary = "获取内存统计", description = "返回当前 JVM 的总内存、已用内存、空闲内存、最大内存等信息")
+    @Operation(summary = "获取内存统计")
     public Map<String, Long> getMemoryStats() {
         Runtime runtime = Runtime.getRuntime();
-        Map<String, Long> memoryStats = new HashMap<>();
+        Map<String, Long> memoryStats = new HashMap<String, Long>();
         memoryStats.put("totalMemoryMB", runtime.totalMemory() / (1024 * 1024));
         memoryStats.put("freeMemoryMB", runtime.freeMemory() / (1024 * 1024));
         memoryStats.put("usedMemoryMB", (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024));
@@ -79,13 +64,8 @@ public class MetricsController {
         return memoryStats;
     }
 
-    /**
-     * 清除所有缓存
-     * 
-     * @return 清除结果
-     */
     @GetMapping("/cache/clear")
-    @Operation(summary = "清除所有缓存", description = "清空所有缓存区域的数据，慎用！")
+    @Operation(summary = "清除所有缓存")
     public Map<String, String> clearAllCaches() {
         for (String cacheName : Arrays.asList("dataModel", "recommendations", "movies")) {
             Cache cache = cacheManager.getCache(cacheName);
@@ -93,7 +73,7 @@ public class MetricsController {
                 cache.clear();
             }
         }
-        Map<String, String> result = new HashMap<>();
+        Map<String, String> result = new HashMap<String, String>();
         result.put("status", "success");
         result.put("message", "所有缓存已清除");
         return result;

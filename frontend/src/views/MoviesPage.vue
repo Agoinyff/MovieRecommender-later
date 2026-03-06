@@ -1,109 +1,60 @@
-<template>
+﻿<template>
   <div class="movies-page">
     <div class="page-container">
       <header class="page-header">
         <div>
-          <h1 class="page-title">电影库</h1>
-          <p class="page-description">浏览和搜索海量电影资源</p>
-        </div>
-        <div v-if="totalElements > 0" class="stats-badge">
-          <i class="pi pi-database"></i>
-          <span>共 {{ totalElements }} 部电影</span>
+          <h1>电影库</h1>
+          <p>按片名搜索、浏览热门电影，进入详情页继续评分和查看推荐。</p>
         </div>
       </header>
 
       <div class="search-bar">
-        <div class="search-input-wrapper">
-          <i class="pi pi-search"></i>
-          <input
-            v-model="searchKeyword"
-            type="text"
-            placeholder="搜索电影名称、类型..."
-            @keyup.enter="handleSearch"
-            class="search-input"
-          />
-          <button v-if="searchKeyword" @click="clearSearch" class="clear-btn">
-            <i class="pi pi-times"></i>
-          </button>
-        </div>
-        <button @click="handleSearch" class="search-btn" :disabled="loading">
-          <i class="pi pi-search"></i>
-          <span>搜索</span>
-        </button>
+        <input v-model="searchKeyword" @keyup.enter="handleSearch" type="text" placeholder="搜索电影名" />
+        <button @click="handleSearch">搜索</button>
+        <button v-if="searchKeyword" class="ghost" @click="clearSearch">清空</button>
       </div>
 
-      <LoadingSpinner v-if="loading" message="加载中..." />
-
-      <div v-else-if="error" class="error-message">
-        <i class="pi pi-exclamation-triangle"></i>
-        <p>{{ error }}</p>
+      <LoadingSpinner v-if="loading" message="正在加载电影..." />
+      <div v-else-if="error" class="state error">{{ error }}</div>
+      <div v-else class="movies-grid">
+        <MovieCard v-for="movie in movies" :key="movie.id || movie.movieId" :movie="movie" @click="showMovieDetail" />
       </div>
 
-      <div v-else-if="movies.length === 0" class="empty-state">
-        <i class="pi pi-inbox"></i>
-        <p>暂无电影数据</p>
-      </div>
-
-      <Transition name="fade">
-        <div v-if="movies.length > 0" class="movies-grid">
-          <TransitionGroup name="movie-list">
-            <MovieCard
-              v-for="movie in movies"
-              :key="movie.movieId"
-              :movie="movie"
-              @click="showMovieDetail"
-            />
-          </TransitionGroup>
-        </div>
-      </Transition>
-
-      <div v-if="totalPages > 1" class="pagination-wrapper">
-        <Paginator
-          :rows="pageSize"
-          :totalRecords="totalElements"
-          :first="currentPage * pageSize"
-          @page="onPageChange"
-          :pageLinkSize="5"
-          template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
-        />
+      <div v-if="totalPages > 1" class="pagination">
+        <button :disabled="currentPage === 0" @click="onPageChange(currentPage - 1)">上一页</button>
+        <span>第 {{ currentPage + 1 }} / {{ totalPages }} 页</span>
+        <button :disabled="currentPage + 1 >= totalPages" @click="onPageChange(currentPage + 1)">下一页</button>
       </div>
     </div>
 
-    <MovieDetailDialog
-      v-model:visible="dialogVisible"
-      :movie="selectedMovie"
-    />
+    <MovieDetailDialog v-model:visible="dialogVisible" :movie="selectedMovie" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useMovieStore } from '@/store/movie';
+import LoadingSpinner from '@/components/LoadingSpinner.vue';
 import MovieCard from '@/components/MovieCard.vue';
 import MovieDetailDialog from '@/components/MovieDetailDialog.vue';
-import LoadingSpinner from '@/components/LoadingSpinner.vue';
-import Paginator from 'primevue/paginator';
 
 const movieStore = useMovieStore();
 const searchKeyword = ref('');
-const pageSize = ref(20);
 const dialogVisible = ref(false);
 const selectedMovie = ref(null);
+const pageSize = 20;
 
 const movies = computed(() => movieStore.movies);
 const loading = computed(() => movieStore.loading);
 const error = computed(() => movieStore.error);
-const totalElements = computed(() => movieStore.totalElements);
 const totalPages = computed(() => movieStore.totalPages);
 const currentPage = computed(() => movieStore.currentPage);
 
-const loadMovies = (page = 0) => {
-  movieStore.fetchMovies({ page, size: pageSize.value });
-};
+const loadMovies = (page = 0) => movieStore.fetchMovies({ page, size: pageSize });
 
 const handleSearch = () => {
   if (searchKeyword.value.trim()) {
-    movieStore.search(searchKeyword.value.trim(), 0, pageSize.value);
+    movieStore.search(searchKeyword.value.trim(), 0, pageSize);
   } else {
     loadMovies(0);
   }
@@ -114,14 +65,12 @@ const clearSearch = () => {
   loadMovies(0);
 };
 
-const onPageChange = (event) => {
-  const page = event.page;
+const onPageChange = (page) => {
   if (searchKeyword.value.trim()) {
-    movieStore.search(searchKeyword.value.trim(), page, pageSize.value);
+    movieStore.search(searchKeyword.value.trim(), page, pageSize);
   } else {
     loadMovies(page);
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
 const showMovieDetail = (movie) => {
@@ -129,238 +78,84 @@ const showMovieDetail = (movie) => {
   dialogVisible.value = true;
 };
 
-onMounted(() => {
-  loadMovies();
-});
+onMounted(() => loadMovies());
 </script>
 
 <style scoped>
 .movies-page {
-  min-height: calc(100vh - 64px);
-  background: linear-gradient(180deg, rgba(249, 250, 251, 0.5) 0%, rgba(255, 255, 255, 0.8) 100%);
+  min-height: calc(100vh - 68px);
+  background: linear-gradient(180deg, #fff7ed, #ffffff);
 }
 
 .page-container {
-  max-width: 1200px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 40px 24px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 32px;
-  gap: 20px;
-}
-
-.page-title {
+.page-header h1 {
   margin: 0 0 8px;
-  font-size: 42px;
-  font-weight: 800;
-  color: #1f2937;
+  font-size: 44px;
 }
 
-.page-description {
-  margin: 0;
-  font-size: 16px;
-  color: #6b7280;
-}
-
-.stats-badge {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  border-radius: 20px;
-  color: #4f46e5;
-  font-weight: 700;
-  white-space: nowrap;
+.page-header p {
+  margin: 0 0 24px;
+  color: #64748b;
 }
 
 .search-bar {
   display: flex;
   gap: 12px;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
-.search-input-wrapper {
+.search-bar input {
   flex: 1;
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.search-input-wrapper > i {
-  position: absolute;
-  left: 18px;
-  color: #9ca3af;
-  font-size: 18px;
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  height: 52px;
-  padding: 0 48px 0 52px;
-  border: 2px solid rgba(229, 231, 235, 0.6);
+  height: 48px;
   border-radius: 16px;
-  font-size: 16px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  transition: all 0.3s ease;
+  border: 1px solid #cbd5e1;
+  padding: 0 16px;
 }
 
-.search-input:focus {
-  outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
-}
-
-.clear-btn {
-  position: absolute;
-  right: 12px;
-  width: 32px;
-  height: 32px;
+.search-bar button {
+  height: 48px;
+  padding: 0 18px;
+  border-radius: 16px;
   border: none;
-  background: rgba(156, 163, 175, 0.1);
-  border-radius: 8px;
-  color: #6b7280;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.clear-btn:hover {
-  background: rgba(156, 163, 175, 0.2);
-  color: #374151;
-}
-
-.search-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 28px;
-  height: 52px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: #ea580c;
   color: #fff;
-  border: none;
-  border-radius: 16px;
-  font-size: 16px;
   font-weight: 700;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
 }
 
-.search-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
-}
-
-.search-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.search-bar .ghost {
+  background: #fff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
 }
 
 .movies-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 24px;
-  margin-bottom: 40px;
+  gap: 20px;
 }
 
-.pagination-wrapper {
+.pagination {
   display: flex;
   justify-content: center;
-  margin-top: 40px;
+  align-items: center;
+  gap: 14px;
+  margin-top: 28px;
 }
 
-.error-message {
-  text-align: center;
-  padding: 60px 20px;
+.pagination button {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
+.state.error {
   color: #dc2626;
 }
-
-.error-message i {
-  font-size: 48px;
-  margin-bottom: 16px;
-}
-
-.error-message p {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 80px 20px;
-  color: #9ca3af;
-}
-
-.empty-state i {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-
-.empty-state p {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 500;
-}
-
-/* 动画效果 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-.movie-list-move,
-.movie-list-enter-active {
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.movie-list-enter-from {
-  opacity: 0;
-  transform: translateY(20px);
-}
-
-.movie-list-leave-active {
-  position: absolute;
-}
-
-@media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-  }
-
-  .page-title {
-    font-size: 32px;
-  }
-
-  .search-bar {
-    flex-direction: column;
-  }
-
-  .search-btn {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .movies-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 16px;
-  }
-}
 </style>
-

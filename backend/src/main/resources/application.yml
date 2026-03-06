@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/movie?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    url: ${DB_URL:jdbc:mysql://localhost:3306/movie?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jackson:
     serialization:
@@ -11,7 +11,7 @@ spring:
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
-    default-statement-timeout: 30  # 默认查询超时30秒
+    default-statement-timeout: 30
 
 server:
   port: 8080
@@ -22,17 +22,26 @@ logging:
     com.rcd.movierecommender.backend: DEBUG
     org.springframework.cache: DEBUG
 
-# 数据模型构建配置
 model:
   build:
     cron: "0 0 * * * ?"      # 每小时执行一次
     timeout: 300000           # 构建超时时间（5分钟）
     startup-delay: 5000      # 启动后延迟30秒开始预热
 
-# TMDb API 配置
 tmdb:
   api:
-    key: 764d5a982fef573bdd8da60b1a23224e
-    read-token: eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI3NjRkNWE5ODJmZWY1NzNiZGQ4ZGE2MGIxYTIzMjI0ZSIsIm5iZiI6MTc2ODc5Mjk1Mi45ODUsInN1YiI6IjY5NmRhMzc4OTNiOGRiY2I2OThmY2RmYyIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.XTnl6GtxkBtcuWjfTcWk-JfIJRlXn7KCpNylArl9ung
-    base-url: https://api.themoviedb.org/3
-    image-base-url: https://image.tmdb.org/t/p/w500
+    key: ${TMDB_API_KEY:764d5a982fef573bdd8da60b1a23224e}
+    read-token: ${TMDB_READ_TOKEN:eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI3NjRkNWE5ODJmZWY1NzNiZGQ4ZGE2MGIxYTIzMjI0ZSIsIm5iZiI6MTc2ODc5Mjk1Mi45ODUsInN1YiI6IjY5NmRhMzc4OTNiOGRiY2I2OThmY2RmYyIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.XTnl6GtxkBtcuWjfTcWk-JfIJRlXn7KCpNylArl9ung}
+    base-url: ${TMDB_BASE_URL:https://api.themoviedb.org/3}
+    image-base-url: ${TMDB_IMAGE_BASE_URL:https://image.tmdb.org/t/p/w500}
+
+app:
+  cors:
+    allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+  auth:
+    cookie-name: ${AUTH_COOKIE_NAME:movie_recommender_token}
+    secret: ${AUTH_JWT_SECRET:change-this-secret-in-env-at-least-32-bytes}
+    expires-hours: ${AUTH_EXPIRES_HOURS:24}
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:admin123456}

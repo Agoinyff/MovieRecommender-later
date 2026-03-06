@@ -1,0 +1,2 @@
+strategy,users,k,precision_at_k,recall_at_k,f1_at_k,coverage_at_k,distinct_recommended_items,catalog_size
+USER_BASED,4756,20,0.00262826,0.02474068,0.00470251,0.42724697,1659,3883

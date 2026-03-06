@@ -1,131 +1,123 @@
-<template>
-  <div class="user-profile-page">
+﻿<template>
+  <div class="profile-page">
     <div class="page-container">
       <header class="page-header">
-        <h1 class="page-title">我的评分</h1>
-        <p class="page-description">查看和管理你的电影评分记录</p>
+        <div>
+          <h1>个人中心</h1>
+          <p>查看你的评分画像、搜索评分记录，并继续回流推荐系统。</p>
+        </div>
       </header>
 
-      <div class="user-selector">
-        <div class="selector-card">
-          <label class="selector-label">用户 ID</label>
-          <div class="selector-input-group">
-            <input
-              v-model.number="userId"
-              type="number"
-              min="1"
-              placeholder="请输入用户 ID"
-              class="user-input"
-              @keyup.enter="loadUserRatings"
-            />
-            <button @click="loadUserRatings" :disabled="!userId || loading" class="load-btn">
-              <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-search'"></i>
-              <span>{{ loading ? '加载中...' : '查询' }}</span>
-            </button>
-          </div>
+      <section class="profile-summary">
+        <div class="summary-card">
+          <span>用户名</span>
+          <strong>{{ authStore.user?.username }}</strong>
         </div>
+        <div class="summary-card">
+          <span>角色</span>
+          <strong>{{ authStore.user?.role === 'ADMIN' ? '管理员' : '普通用户' }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>累计评分</span>
+          <strong>{{ stats.totalRatings || 0 }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>平均评分</span>
+          <strong>{{ Number(stats.averageRating || 0).toFixed(1) }}</strong>
+        </div>
+      </section>
+
+      <section class="toolbar-card">
+        <div class="filters">
+          <input v-model.trim="filters.query" type="text" placeholder="按电影名搜索" @keyup.enter="loadRatings(0)" />
+          <select v-model="filters.minRating" @change="loadRatings(0)">
+            <option value="">最低评分</option>
+            <option v-for="n in 5" :key="n" :value="n">{{ n }} 星</option>
+          </select>
+          <select v-model="filters.maxRating" @change="loadRatings(0)">
+            <option value="">最高评分</option>
+            <option v-for="n in 5" :key="n" :value="n">{{ n }} 星</option>
+          </select>
+          <button @click="loadRatings(0)">查询</button>
+        </div>
+      </section>
+
+      <div class="table-card">
+        <LoadingSpinner v-if="loading" message="正在加载评分..." />
+        <div v-else-if="error" class="state error">{{ error }}</div>
+        <template v-else>
+          <table v-if="ratings.length" class="ratings-table">
+            <thead>
+              <tr>
+                <th>电影名</th>
+                <th>评分</th>
+                <th>评分时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in ratings" :key="item.movieId">
+                <td>{{ item.movieName }}</td>
+                <td>{{ item.rating.toFixed(1) }}</td>
+                <td>{{ formatDate(item.timestamp) }}</td>
+                <td>
+                  <button class="link-btn" @click="openMovie(item)">预览</button>
+                  <router-link class="link-btn" :to="`/movies/${item.movieId}`">详情</router-link>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="state">暂无评分记录</div>
+        </template>
       </div>
 
-      <div v-if="hasLoaded && !loading" class="content-section">
-        <div v-if="ratings.length > 0" class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-icon" style="background: rgba(99, 102, 241, 0.1);">
-              <i class="pi pi-star-fill" style="color: #6366f1;"></i>
-            </div>
-            <div class="stat-content">
-              <span class="stat-value">{{ ratings.length }}</span>
-              <span class="stat-label">评分总数</span>
-            </div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon" style="background: rgba(245, 158, 11, 0.1);">
-              <i class="pi pi-chart-line" style="color: #f59e0b;"></i>
-            </div>
-            <div class="stat-content">
-              <span class="stat-value">{{ averageRating.toFixed(1) }}</span>
-              <span class="stat-label">平均评分</span>
-            </div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon" style="background: rgba(236, 72, 153, 0.1);">
-              <i class="pi pi-heart-fill" style="color: #ec4899;"></i>
-            </div>
-            <div class="stat-content">
-              <span class="stat-value">{{ highRatingsCount }}</span>
-              <span class="stat-label">高分电影 (≥4星)</span>
-            </div>
-          </div>
-
-          <div class="stat-card action-card">
-            <router-link to="/recommendations" class="action-link">
-              <i class="pi pi-sparkles"></i>
-              <span>获取推荐</span>
-            </router-link>
-          </div>
-        </div>
-
-        <div class="ratings-section">
-          <UserRatingsTable
-            :ratings="ratings"
-            :loading="loading"
-            :error="error"
-            @movie-clicked="handleMovieClick"
-          />
-        </div>
-      </div>
-
-      <div v-else-if="!hasLoaded" class="welcome-state">
-        <div class="welcome-icon">
-          <i class="pi pi-user"></i>
-        </div>
-        <h2>查看用户评分记录</h2>
-        <p>输入用户 ID 来查看该用户的所有电影评分</p>
+      <div v-if="pagination.totalPages > 1" class="pagination">
+        <button :disabled="pagination.page === 0" @click="loadRatings(pagination.page - 1)">上一页</button>
+        <span>第 {{ pagination.page + 1 }} / {{ pagination.totalPages }} 页</span>
+        <button :disabled="pagination.page + 1 >= pagination.totalPages" @click="loadRatings(pagination.page + 1)">下一页</button>
       </div>
     </div>
 
-    <MovieDetailDialog
-      v-model:visible="dialogVisible"
-      :movie="selectedMovie"
-    />
+    <MovieDetailDialog v-model:visible="dialogVisible" :movie="selectedMovie" @rating-updated="handleRatingUpdated" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
-import { getUserRatings } from '@/api';
-import UserRatingsTable from '@/components/UserRatingsTable.vue';
+import { onMounted, reactive, ref } from 'vue';
+import { getMyRatings, getMyRatingStats } from '@/api';
 import MovieDetailDialog from '@/components/MovieDetailDialog.vue';
+import LoadingSpinner from '@/components/LoadingSpinner.vue';
+import { useAuthStore } from '@/store/auth';
 
-const userId = ref(100);
+const authStore = useAuthStore();
+const stats = ref({ totalRatings: 0, averageRating: 0 });
 const ratings = ref([]);
 const loading = ref(false);
 const error = ref('');
-const hasLoaded = ref(false);
 const dialogVisible = ref(false);
 const selectedMovie = ref(null);
+const pagination = reactive({ page: 0, totalPages: 0, totalElements: 0 });
+const filters = reactive({ query: '', minRating: '', maxRating: '' });
 
-const averageRating = computed(() => {
-  if (ratings.value.length === 0) return 0;
-  const sum = ratings.value.reduce((acc, r) => acc + r.rating, 0);
-  return sum / ratings.value.length;
-});
+const loadStats = async () => {
+  stats.value = await getMyRatingStats();
+};
 
-const highRatingsCount = computed(() => {
-  return ratings.value.filter(r => r.rating >= 4).length;
-});
-
-const loadUserRatings = async () => {
-  if (!userId.value) return;
-
+const loadRatings = async (page = 0) => {
   loading.value = true;
   error.value = '';
-  hasLoaded.value = true;
-
   try {
-    const data = await getUserRatings(userId.value);
-    ratings.value = data || [];
+    const data = await getMyRatings({
+      page,
+      size: 10,
+      query: filters.query || undefined,
+      minRating: filters.minRating || undefined,
+      maxRating: filters.maxRating || undefined
+    });
+    ratings.value = data.content || [];
+    pagination.page = data.page || 0;
+    pagination.totalPages = data.totalPages || 0;
+    pagination.totalElements = data.totalElements || 0;
   } catch (err) {
     error.value = err.response?.data?.message || err.message || '加载评分失败';
     ratings.value = [];
@@ -134,266 +126,148 @@ const loadUserRatings = async () => {
   }
 };
 
-const handleMovieClick = (rating) => {
+const openMovie = (rating) => {
   selectedMovie.value = {
     id: rating.movieId,
+    movieId: rating.movieId,
     name: rating.movieName,
     movieName: rating.movieName,
     userRating: rating.rating
   };
   dialogVisible.value = true;
 };
+
+const handleRatingUpdated = async () => {
+  await Promise.all([loadStats(), loadRatings(pagination.page)]);
+};
+
+const formatDate = (timestamp) => {
+  if (!timestamp) {
+    return '-';
+  }
+  return new Date(timestamp * 1000).toLocaleString('zh-CN');
+};
+
+onMounted(async () => {
+  await Promise.all([loadStats(), loadRatings(0)]);
+});
 </script>
 
 <style scoped>
-.user-profile-page {
-  min-height: calc(100vh - 64px);
-  background: linear-gradient(180deg, rgba(249, 250, 251, 0.5) 0%, rgba(255, 255, 255, 0.8) 100%);
+.profile-page {
+  min-height: calc(100vh - 68px);
+  background: linear-gradient(180deg, #fff7ed, #ffffff);
 }
 
 .page-container {
-  max-width: 1200px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 40px 24px;
 }
 
-.page-header {
-  margin-bottom: 32px;
-}
-
-.page-title {
+.page-header h1 {
   margin: 0 0 8px;
   font-size: 42px;
-  font-weight: 800;
-  color: #1f2937;
 }
 
-.page-description {
-  margin: 0;
-  font-size: 16px;
-  color: #6b7280;
+.page-header p {
+  margin: 0 0 24px;
+  color: #64748b;
 }
 
-.user-selector {
-  margin-bottom: 32px;
-}
-
-.selector-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(229, 231, 235, 0.6);
-  border-radius: 20px;
-  padding: 28px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.04);
-}
-
-.selector-label {
-  display: block;
-  margin-bottom: 12px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #4b5563;
-}
-
-.selector-input-group {
-  display: flex;
-  gap: 12px;
-}
-
-.user-input {
-  flex: 1;
-  height: 52px;
-  padding: 0 20px;
-  border: 2px solid rgba(229, 231, 235, 0.6);
-  border-radius: 14px;
-  font-size: 16px;
-  background: rgba(255, 255, 255, 0.9);
-  transition: all 0.3s ease;
-}
-
-.user-input:focus {
-  outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
-}
-
-.load-btn {
-  height: 52px;
-  padding: 0 32px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #ffffff;
-  border: none;
-  border-radius: 14px;
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
-}
-
-.load-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
-}
-
-.load-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.stats-grid {
+.profile-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 20px;
-  margin-bottom: 32px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
 }
 
-.stat-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(229, 231, 235, 0.6);
-  border-radius: 20px;
-  padding: 24px;
+.summary-card,
+.toolbar-card,
+.table-card {
+  background: #fff;
+  border-radius: 24px;
+  padding: 22px;
+  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.06);
+}
+
+.summary-card span {
+  display: block;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.summary-card strong {
+  font-size: 28px;
+  color: #111827;
+}
+
+.filters {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.04);
-  transition: all 0.3s ease;
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.08);
-}
-
-.stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26px;
-}
-
-.stat-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.stat-value {
-  font-size: 32px;
-  font-weight: 800;
-  color: #1f2937;
-  line-height: 1;
-}
-
-.stat-label {
-  font-size: 13px;
-  color: #6b7280;
-  font-weight: 600;
-}
-
-.action-card {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  overflow: hidden;
-}
-
-.action-card:hover {
-  transform: translateY(-4px) scale(1.02);
-}
-
-.action-link {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 12px;
-  padding: 24px;
-  color: #ffffff;
-  text-decoration: none;
-  font-size: 18px;
+  flex-wrap: wrap;
+}
+
+.filters input,
+.filters select,
+.filters button {
+  height: 46px;
+  border-radius: 14px;
+}
+
+.filters input,
+.filters select {
+  border: 1px solid #cbd5e1;
+  padding: 0 14px;
+}
+
+.filters button,
+.pagination button,
+.link-btn {
+  border: none;
+  background: #ea580c;
+  color: #fff;
+  padding: 0 16px;
   font-weight: 700;
 }
 
-.action-link i {
-  font-size: 24px;
+.ratings-table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
-.ratings-section {
-  animation: slideUp 0.5s ease-out;
+.ratings-table th,
+.ratings-table td {
+  padding: 14px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.welcome-state {
-  text-align: center;
-  padding: 100px 40px;
-}
-
-.welcome-icon {
-  width: 120px;
-  height: 120px;
-  margin: 0 auto 24px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  border-radius: 30px;
-  display: flex;
+.link-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 56px;
-  color: #fff;
-  box-shadow: 0 20px 50px rgba(99, 102, 241, 0.3);
+  height: 36px;
+  margin-right: 8px;
+  border-radius: 10px;
+  text-decoration: none;
 }
 
-.welcome-state h2 {
-  margin: 0 0 16px;
-  font-size: 32px;
-  font-weight: 800;
-  color: #1f2937;
+.pagination {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  align-items: center;
 }
 
-.welcome-state p {
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.6;
-  color: #6b7280;
-  max-width: 500px;
-  margin: 0 auto;
+.state {
+  padding: 24px 0;
+  text-align: center;
+  color: #64748b;
 }
 
-@media (max-width: 768px) {
-  .page-title {
-    font-size: 32px;
-  }
-
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .selector-input-group {
-    flex-direction: column;
-  }
-
-  .load-btn {
-    width: 100%;
-    justify-content: center;
-  }
+.state.error {
+  color: #dc2626;
 }
 </style>

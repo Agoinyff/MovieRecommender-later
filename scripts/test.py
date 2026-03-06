@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 离线评估脚本：对比 USER_BASED / ITEM_BASED / SLOPE_ONE 三种策略在同一数据切分下的 Recall@K / F1@K / Coverage@K。
 
@@ -22,6 +23,7 @@ import json
 import sys
 import time
 import traceback
+import random
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
@@ -31,6 +33,8 @@ pymysql = None
 requests = None
 
 STRATEGIES = ["USER_BASED", "ITEM_BASED", "SLOPE_ONE"]
+# STRATEGIES = ["USER_BASED"]
+
 
 
 @dataclass
@@ -172,7 +176,9 @@ class Evaluator:
         )
 
     def get_test_truth(self) -> Dict[int, Set[int]]:
-        rows = self._query_all(f"SELECT userID, movieID FROM `{self.eval_test_table}`")
+        rows = self._query_all(
+        f"SELECT userID, movieID FROM `{self.eval_test_table}` WHERE preference >= 3"
+    )
         truth: Dict[int, Set[int]] = defaultdict(set)
         for r in rows:
             truth[int(r["userID"])].add(int(r["movieID"]))
@@ -248,6 +254,8 @@ class Evaluator:
         f1s = []
 
         users = sorted(truth_map.keys())
+        random.seed(42)  # 固定随机种子，保证每次抽到同一批用户（论文更好写）
+        users = random.sample(users, k=min(200, len(users)))
         print(f"[INFO] 评估策略 {strategy}，用户数={len(users)}")
 
         for idx, uid in enumerate(users, start=1):

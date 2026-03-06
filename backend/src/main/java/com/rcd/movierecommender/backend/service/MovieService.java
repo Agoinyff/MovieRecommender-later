@@ -5,10 +5,10 @@ import com.rcd.movierecommender.backend.entity.MovieEntity;
 import com.rcd.movierecommender.backend.exception.BusinessException;
 import com.rcd.movierecommender.backend.exception.ErrorCode;
 import com.rcd.movierecommender.backend.mapper.MovieMapper;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,49 +20,47 @@ public class MovieService {
 
     private final MovieMapper movieMapper;
 
-    /**
-     * MovieService 封装了电影查询与 DTO 转换逻辑。
-     */
     public MovieService(MovieMapper movieMapper) {
         this.movieMapper = movieMapper;
     }
 
-    /**
-     * 支持分页的电影搜索：当 keyword 为空时返回全部分页；否则执行名称模糊匹配。
-     */
     public Page<MovieDto> searchMovies(String keyword, int page, int size) {
         if (page < 0 || size <= 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST,
-                    "分页参数不合法：page 必须大于等于 0，size 必须为正整数");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "分页参数不合法");
         }
-
         try {
             String normalizedKeyword = normalizeKeyword(keyword);
             int offset = page * size;
-
-            List<MovieEntity> entities = movieMapper.findMovies(normalizedKeyword, size, offset);
-            long total = movieMapper.countMovies(normalizedKeyword);
-            List<MovieDto> dtos = entities.stream()
+            List<MovieDto> dtos = movieMapper.findMovies(normalizedKeyword, size, offset).stream()
                     .map(this::toDto)
                     .collect(Collectors.toList());
-
-            return new PageImpl<>(dtos, PageRequest.of(page, size), total);
-        } catch (DataAccessException e) {
-            throw new BusinessException(ErrorCode.DATABASE_ERROR,
-                    "查询电影列表失败，数据库访问发生异常", e);
+            long total = movieMapper.countMovies(normalizedKeyword);
+            return new PageImpl<MovieDto>(dtos, PageRequest.of(page, size), total);
+        } catch (DataAccessException ex) {
+            throw new BusinessException(ErrorCode.DATABASE_ERROR, "查询电影列表失败", ex);
         }
     }
 
-    /**
-     * 按主键查询电影并转换为 DTO。
-     */
     public Optional<MovieDto> getMovie(Long id) {
         try {
-            return Optional.ofNullable(movieMapper.findById(id)).map(this::toDto);
-        } catch (DataAccessException e) {
-            throw new BusinessException(ErrorCode.DATABASE_ERROR,
-                    "查询电影详情失败，数据库访问发生异常", e);
+            MovieEntity entity = movieMapper.findById(id);
+            return entity == null ? Optional.<MovieDto>empty() : Optional.of(toDto(entity));
+        } catch (DataAccessException ex) {
+            throw new BusinessException(ErrorCode.DATABASE_ERROR, "查询电影详情失败", ex);
         }
+    }
+
+    public List<MovieDto> getPopularMovies(int size) {
+        return movieMapper.findPopularMovies(size).stream().map(this::toDto).collect(Collectors.toList());
+    }
+
+    public MovieDto getMovieOrThrow(Long id) {
+        return getMovie(id).orElseThrow(new java.util.function.Supplier<BusinessException>() {
+            @Override
+            public BusinessException get() {
+                return new BusinessException(ErrorCode.NOT_FOUND, "电影不存在");
+            }
+        });
     }
 
     private String normalizeKeyword(String keyword) {
@@ -73,16 +71,8 @@ public class MovieService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    /**
-     * 实体转为传输对象，隔离对外暴露字段。
-     * 直接返回数据库中的 posterUrl，不再同步调用 TMDb API 以提升性能。
-     */
     private MovieDto toDto(MovieEntity entity) {
-        return new MovieDto(
-                entity.getId(),
-                entity.getName(),
-                entity.getPublishedYear(),
-                entity.getGenres(),
+        return new MovieDto(entity.getId(), entity.getName(), entity.getPublishedYear(), entity.getGenres(),
                 entity.getPosterUrl());
     }
 }
